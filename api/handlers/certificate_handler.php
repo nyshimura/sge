@@ -118,7 +118,7 @@ function generate_certificate_pdf_and_hash($details, $completionDate, $overrideC
 
         // --- Texto Principal (inalterado) ---
         $pdf->SetY($main_text_y);
-        $pdf->SetX(25); $pdf->SetFont('Arial', '', 12); $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetX(25); $pdf->SetFont('Helvetica', '', 12); $pdf->SetTextColor(0, 0, 0);
         $leftMargin = 25; $rightMargin = 25; $cellWidth = $pdf->GetPageWidth() - $leftMargin - $rightMargin;
         $pdf->MultiCell($cellWidth, 7, to_iso($documentText), 0, 'C');
 
@@ -134,7 +134,7 @@ function generate_certificate_pdf_and_hash($details, $completionDate, $overrideC
         $school_sig_height = 20; // Altura da imagem da assinatura
         $school_line_width = 70; // Largura da linha abaixo da assinatura
         // Posição X (à esquerda, com margem)
-        $school_sig_x = $leftMargin + 20; // Um pouco mais para dentro
+        $school_sig_x = $leftMargin + 170; // Um pouco mais para dentro
         $school_line_start_x = $school_sig_x + ($school_sig_width / 2) - ($school_line_width / 2); // Centraliza linha sob imagem
 
         // Desenha a imagem da assinatura da escola (se existir)
@@ -156,8 +156,7 @@ function generate_certificate_pdf_and_hash($details, $completionDate, $overrideC
         }
 
         // Desenha a linha da escola
-        $pdf->SetLineWidth(0.3);
-        $pdf->Line($school_line_start_x, $signatures_y, $school_line_start_x + $school_line_width, $signatures_y);
+        
 
         // Escreve o nome da escola abaixo da linha
         $pdf->SetXY($school_line_start_x, $signatures_y + 1);
@@ -168,10 +167,10 @@ function generate_certificate_pdf_and_hash($details, $completionDate, $overrideC
         // --- Assinatura do Professor ---
         $prof_line_width = 70; // Largura da linha
         // Posição X (à direita, com margem)
-        $prof_line_start_x = $pdf->GetPageWidth() - $rightMargin - 20 - $prof_line_width; // Um pouco mais para dentro
+        $prof_line_start_x = $pdf->GetPageWidth() - $rightMargin - 150 - $prof_line_width; // Um pouco mais para dentro
 
         // Desenha a linha do professor
-        $pdf->Line($prof_line_start_x, $signatures_y, $prof_line_start_x + $prof_line_width, $signatures_y);
+        
 
         // Escreve o nome do professor abaixo da linha
         $pdf->SetXY($prof_line_start_x, $signatures_y + 1);
@@ -197,7 +196,7 @@ function generate_certificate_pdf_and_hash($details, $completionDate, $overrideC
             // Posição Y do QR Code - um pouco abaixo das assinaturas OU fixo no fundo?
             // Se fixo no fundo, usar: $qrCodeY = $pdf->GetPageHeight() - $bottomMargin - $qrCodeSize;
             // Se abaixo das assinaturas: (cuidado para não sobrepor)
-            $qrCodeY = $signatures_y + 15; // Ex: 15mm abaixo da linha da assinatura
+            $qrCodeY = $signatures_y + 10; // Ex: 15mm abaixo da linha da assinatura
 
             // Garante que não saia da página
              if ($qrCodeY + $qrCodeSize > $pdf->GetPageHeight() - $bottomMargin + 5) {
@@ -208,9 +207,9 @@ function generate_certificate_pdf_and_hash($details, $completionDate, $overrideC
             if (file_exists($tmp_qr_path)) {
                 $pdf->Image($tmp_qr_path, $qrCodeX, $qrCodeY, $qrCodeSize, $qrCodeSize);
                 $textX = $qrCodeX + $qrCodeSize + 5;
-                $textY = $qrCodeY + ($qrCodeSize / 2) - 5;
+                $textY = $qrCodeY + ($qrCodeSize / 2) - 3;
                 $pdf->SetXY($textX, $textY);
-                $pdf->SetFont('Arial', '', 8);
+                $pdf->SetFont('Arial', '', 7);
                 $pdf->MultiCell(100, 4, to_iso("Verifique a autenticidade em:\n" . $verificationUrlBase . "\nCódigo: " . $verificationHash), 0, 'L');
             }
         }
