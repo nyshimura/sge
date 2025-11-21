@@ -1,12 +1,10 @@
 <?php
+// api/handlers/update_handler.php
 require_once '../config.php';
 
-// Segurança: Verifique se o usuário é admin na sua lógica de sessão
-// session_start();
-// if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { die(json_encode(['error' => 'Não autorizado'])); }
-
+// Aumenta o tempo de execução para downloads lentos
+ini_set('max_execution_time', 300); 
 header('Content-Type: application/json');
-ini_set('max_execution_time', 300); // 5 minutos para baixar
 
 $action = $_GET['action'] ?? '';
 
@@ -83,11 +81,12 @@ if ($action === 'check') {
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: token " . GITHUB_TOKEN]);
     }
     $exec = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     fclose($fp);
 
-    if (!$exec) {
-        echo json_encode(['success' => false, 'message' => 'Erro no download.']);
+    if (!$exec || $httpCode != 200) {
+        echo json_encode(['success' => false, 'message' => 'Erro ao baixar ZIP. HTTP Code: ' . $httpCode]);
         if(file_exists($tempZip)) unlink($tempZip);
         exit;
     }
@@ -107,32 +106,47 @@ if ($action === 'check') {
             }
         }
 
-        // === PROTEÇÃO DO CONFIG.PHP ===
+        if (!$internalFolder) {
+            echo json_encode(['success' => false, 'message' => 'Pasta interna do ZIP não encontrada.']);
+            exit;
+        }
+
+        // Protege o config.php local
         if(file_exists($internalFolder . '/api/config.php')) {
             unlink($internalFolder . '/api/config.php');
         }
-        // ==============================
 
-        // Copia arquivos novos
+        // Copia os arquivos baixados
         recurseCopy($internalFolder, '../../');
         
-        // ============================================================
-        // [NOVO] AUTO-MIGRAÇÃO DE BANCO DE DADOS
-        // ============================================================
-        // Verifica se o script de migração existe (ele acabou de ser copiado/atualizado)
-        // e o executa para garantir que o banco tenha as colunas novas.
+        // === AUTO-MIGRAÇÃO DE BANCO DE DADOS ===
+        $migrationMsg = "";
+        // Verifica se o arquivo de migração existe (agora deve estar lá se veio no ZIP)
         if(file_exists('../../api/auto_migrate.php')) {
+            // Inclui o arquivo para rodar as migrações
+            // O array $logs será preenchido dentro do auto_migrate.php
             include '../../api/auto_migrate.php';
+            
+            if (isset($logs) && !empty($logs)) {
+                $migrationMsg = "\n\n[Banco de Dados]:\n" . implode("\n", $logs);
+            } else {
+                $migrationMsg = "\n\n[Banco de Dados]: Nenhuma alteração necessária.";
+            }
+        } else {
+            $migrationMsg = "\n\n[Aviso]: Arquivo api/auto_migrate.php não encontrado no pacote baixado.";
         }
-        // ============================================================
+        // =======================================
 
         // Limpeza
         unlink($tempZip);
         deleteDirectory($tempExtract);
         
-        echo json_encode(['success' => true, 'message' => 'Atualizado com sucesso!']);
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Arquivos atualizados com sucesso!' . $migrationMsg
+        ]);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Erro ao extrair.']);
+        echo json_encode(['success' => false, 'message' => 'Erro ao descompactar o arquivo.']);
     }
 } else {
     echo json_encode(['error' => 'Ação inválida']);
