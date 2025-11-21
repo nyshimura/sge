@@ -1,6 +1,6 @@
 -- SQL Schema for [Nome do Projeto - Ex: Sistema de Gestão Escolar]
--- Version: [Coloque a versão do seu schema, ex: 1.0]
--- Description: Creates the database structure with only the essential initial data (superadmin user, default settings).
+-- Version: 1.1
+-- Description: Creates the database structure with only the essential initial data.
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -12,9 +12,8 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `u821635548_sistema` (Ou o nome que você preferir)
--- CREATE DATABASE IF NOT EXISTS `u821635548_sistema` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
--- USE `u821635548_sistema`;
+-- Database: `u821635548_sistema`
+--
 
 -- --------------------------------------------------------
 
@@ -62,6 +61,7 @@ CREATE TABLE `courses` (
   `startTime` time DEFAULT NULL,
   `endTime` time DEFAULT NULL,
   `carga_horaria` varchar(50) DEFAULT NULL COMMENT 'Carga horária do curso (ex: 40 horas)',
+  `schedule_json` TEXT DEFAULT NULL COMMENT 'Armazena múltiplos dias e horários em formato JSON',
   `monthlyFee` decimal(10,2) NOT NULL DEFAULT 0.00,
   `paymentType` enum('recorrente','parcelado') NOT NULL DEFAULT 'recorrente',
   `installments` int(3) DEFAULT NULL,
@@ -128,7 +128,6 @@ CREATE TABLE `school_profile` (
 
 --
 -- Despejando dados para a tabela `school_profile`
--- Inserindo dados Padrão/Placeholder. O usuário DEVE atualizar estas informações.
 --
 
 INSERT INTO `school_profile` (`id`, `name`, `cnpj`, `state`, `schoolCity`, `address`, `phone`, `pixKeyType`, `pixKey`, `profilePicture`, `signatureImage`) VALUES
@@ -175,7 +174,6 @@ CREATE TABLE `system_settings` (
 
 --
 -- Despejando dados para a tabela `system_settings`
--- Inserindo configuração padrão. O usuário DEVE revisar estas configurações.
 --
 
 INSERT INTO `system_settings` (`id`, `smtpServer`, `smtpPort`, `smtpUser`, `smtpPass`, `site_url`, `email_approval_subject`, `email_approval_body`, `email_reset_subject`, `email_reset_body`, `certificate_template_text`, `certificate_background_image`, `language`, `timeZone`, `currencySymbol`, `enableTerminationFine`, `terminationFineMonths`, `defaultDueDay`, `geminiApiKey`, `geminiApiEndpoint`, `imageTermsText`, `enrollmentContractText`, `dbHost`, `dbUser`, `dbPass`, `dbName`, `dbPort`, `mp_active`, `mp_public_key`, `mp_access_token`) VALUES
@@ -284,7 +282,6 @@ ALTER TABLE `users`
 
 --
 -- AUTO_INCREMENT para tabelas despejadas
--- Definindo AUTO_INCREMENT para começar em 1 (ou um valor apropriado após o admin)
 --
 
 --
@@ -315,7 +312,7 @@ ALTER TABLE `payments`
 -- AUTO_INCREMENT de tabela `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2; -- Começa em 2 porque o ID 1 é o admin
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- Restrições para tabelas despejadas
