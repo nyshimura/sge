@@ -6,7 +6,6 @@
 
 // Garante acesso à conexão $conn
 if (!isset($conn)) {
-    // Tenta achar o config.php dependendo de onde este script for chamado
     if (file_exists(__DIR__ . '/config.php')) {
         require_once __DIR__ . '/config.php';
     } elseif (file_exists('../config.php')) {
@@ -42,13 +41,6 @@ $migrations = [
         'column'  => 'schedule_json',
         'command' => "ALTER TABLE courses ADD COLUMN schedule_json TEXT DEFAULT NULL COMMENT 'Armazena horários múltiplos em JSON'"
     ],
-
-    // Exemplo futuro: Se quiser adicionar foto no curso
-    // [
-    //    'table'   => 'courses',
-    //    'column'  => 'cover_image',
-    //    'command' => "ALTER TABLE courses ADD COLUMN cover_image LONGTEXT DEFAULT NULL"
-    // ],
 ];
 
 // ==============================================================================
@@ -63,8 +55,9 @@ if (isset($conn)) {
     $logs[] = "Erro Crítico: Não foi possível conectar ao banco de dados para migração.";
 }
 
-// Se rodado via navegador diretamente, mostra o log
-if (php_sapi_name() !== 'cli' && !isset($_POST['action'])) { // Evita output se for chamado via include silencioso
+// CORREÇÃO AQUI: Só exibe o log se o arquivo for acessado DIRETAMENTE.
+// Se for incluído por outro script (como o update_handler), ele fica quieto.
+if (basename(__FILE__) == basename($_SERVER['SCRIPT_FILENAME'])) {
     echo "<pre>" . print_r($logs, true) . "</pre>";
 }
 ?>
