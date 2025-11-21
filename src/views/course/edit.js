@@ -19,10 +19,8 @@ export async function renderEditCourseView(course) {
     let schedule = [];
     try {
         if (course.schedule_json) {
-            // Caso 1: Curso novo ou já migrado (usa JSON)
             schedule = JSON.parse(course.schedule_json);
         } else if (course.dayOfWeek) {
-            // Caso 2: Curso antigo (converte legado para formato novo visualmente)
             const mapLegacy = {
                 'Segunda-feira': 'seg', 'Terça-feira': 'ter', 'Quarta-feira': 'qua',
                 'Quinta-feira': 'qui', 'Sexta-feira': 'sex', 'Sábado': 'sab', 'Domingo': 'dom'
@@ -36,10 +34,8 @@ export async function renderEditCourseView(course) {
         console.error("Erro ao processar horários:", e);
     }
 
-    // Função auxiliar para verificar se o dia está ativo
     const getDayData = (id) => schedule.find(s => s.day_id === id);
 
-    // Lista de dias
     const days = [
         { id: 'seg', label: 'Segunda-feira' },
         { id: 'ter', label: 'Terça-feira' },
@@ -50,7 +46,6 @@ export async function renderEditCourseView(course) {
         { id: 'dom', label: 'Domingo' }
     ];
 
-    // Gera HTML dos dias (já preenchido com dados do banco)
     const scheduleHtml = days.map(d => {
         const dayData = getDayData(d.id);
         const isChecked = !!dayData;
@@ -86,7 +81,9 @@ export async function renderEditCourseView(course) {
         <div class="card full-width">
              <form id="edit-course-form" onsubmit="window.AppHandlers.handleUpdateCourse(event)">
                 <input type="hidden" name="courseId" value="${course.id}">
-                <input type="hidden" name="id" value="${course.id}"> <div class="form-group">
+                <input type="hidden" name="id" value="${course.id}">
+                
+                 <div class="form-group">
                     <label for="courseName">Nome do Curso</label>
                     <input type="text" id="courseName" name="courseName" value="${course.name}" required>
                 </div>
@@ -103,7 +100,7 @@ export async function renderEditCourseView(course) {
                     <label for="teacherId">Professor</label>
                     <select id="teacherId" name="teacherId" required>
                         <option value="">Selecione...</option>
-                        ${teachers.map(t => `<option value="${t.id}" ${course.teacherId == t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                        ${teachers.map(t => `<option value="${t.id}" ${course.teacherId == t.id ? 'selected' : ''}>${t.firstName} ${t.lastName || ''}</option>`).join('')}
                     </select>
                 </div>
 
