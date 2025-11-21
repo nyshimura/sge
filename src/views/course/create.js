@@ -1,7 +1,21 @@
 // src/views/course/create.js
+import { apiCall } from '../../api.js'; // Adicionado import apiCall
 import { appState } from '../../state.js';
 
-export function renderCreateCourseView() {
+export async function renderCreateCourseView() { // Agora é async
+    // 1. Garante que os professores estejam carregados
+    if (!appState.users.some(u => u.role === 'teacher')) {
+        try {
+            const data = await apiCall('getTeachers', {}, 'GET');
+            const teacherIds = new Set(appState.users.filter(u => u.role === 'teacher').map(t => t.id));
+            (data.teachers || []).forEach(t => {
+                if (!teacherIds.has(t.id)) appState.users.push(t);
+            });
+        } catch (e) {
+            console.error("Erro ao buscar professores:", e);
+        }
+    }
+
     const teachers = appState.users.filter(u => u.role === 'teacher');
     const isAiEnabled = appState.systemSettings && appState.systemSettings.geminiApiKey;
 
@@ -16,7 +30,7 @@ export function renderCreateCourseView() {
         { id: 'dom', label: 'Domingo' }
     ];
 
-    // Gera o HTML dos dias com lógica inline de display
+    // Gera o HTML dos dias
     const scheduleHtml = days.map(d => `
         <div class="schedule-row" style="display:flex; flex-direction:column; margin-bottom:8px; padding:8px; border:1px solid #eee; border-radius:4px;">
             <label style="display:flex; align-items:center; font-weight:bold; cursor:pointer;">
@@ -62,7 +76,7 @@ export function renderCreateCourseView() {
                     <label for="teacherId">Professor</label>
                     <select id="teacherId" name="teacherId" required>
                         <option value="">Selecione...</option>
-                        ${teachers.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+                        ${teachers.map(t => `<option value="${t.id}">${t.firstName} ${t.lastName || ''}</option>`).join('')}
                     </select>
                 </div>
 
