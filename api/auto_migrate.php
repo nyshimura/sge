@@ -1,7 +1,7 @@
 <?php
 /**
  * api/auto_migrate.php
- * Sistema de Migração Automática de Banco de Dados (Idempotente)
+ * Sistema de Migração Automática de Banco de Dados (Idempotente 111)
  */
 
 // Garante acesso à conexão $conn
@@ -15,9 +15,11 @@ if (!isset($conn)) {
 
 function checkAndAddColumn($conn, $table, $column, $sqlCommand) {
     try {
-        // 1. Verifica se a coluna existe
-        $stmt = $conn->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
-        $stmt->execute([$column]);
+        // --- CORREÇÃO DE COMPATIBILIDADE MARIADB/MYSQL ---
+        // O comando SHOW COLUMNS não aceita '?' em algumas versões.
+        // Como a variável $column vem do nosso array hardcoded (seguro), 
+        // inserimos diretamente na string.
+        $stmt = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
         
         if ($stmt->rowCount() == 0) {
             // 2. Se NÃO existir, roda o comando para criar
@@ -41,6 +43,16 @@ $migrations = [
         'column'  => 'schedule_json',
         'command' => "ALTER TABLE courses ADD COLUMN schedule_json TEXT DEFAULT NULL COMMENT 'Armazena horários múltiplos em JSON'"
     ],
+    [
+        'table'   => 'courses',
+        'column'  => 'carga_horaria',
+        'command' => "ALTER TABLE courses ADD COLUMN carga_horaria VARCHAR(50) DEFAULT NULL COMMENT 'Ex: 40 horas'"
+    ],
+    [
+        'table'   => 'courses',
+        'column'  => 'closed_date',
+        'command' => "ALTER TABLE courses ADD COLUMN closed_date DATETIME DEFAULT NULL"
+    ],
 ];
 
 // ==============================================================================
@@ -55,8 +67,9 @@ if (isset($conn)) {
     $logs[] = "Erro Crítico: Não foi possível conectar ao banco de dados para migração.";
 }
 
-// CORREÇÃO AQUI: Só exibe o log se o arquivo for acessado DIRETAMENTE.
-// Se for incluído por outro script (como o update_handler), ele fica quieto.
+// --- PROTEÇÃO CRÍTICA ---
+// Só mostra mensagem na tela se você acessar o arquivo diretamente pelo navegador.
+// Se ele for chamado pelo update_handler (invisível), ele fica mudo para não quebrar o JSON.
 if (basename(__FILE__) == basename($_SERVER['SCRIPT_FILENAME'])) {
     echo "<pre>" . print_r($logs, true) . "</pre>";
 }
