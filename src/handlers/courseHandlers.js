@@ -9,24 +9,68 @@ export async function handleCreateCourse(event) {
     const formData = new FormData(form);
     const courseData = Object.fromEntries(formData.entries());
 
-    // Normaliza valores vazios ou ausentes
+    // === NOVA LÓGICA DE AGENDAMENTO ===
+    const schedule = [];
+    const dayMap = {
+        'seg': 'Segunda-feira', 'ter': 'Terça-feira', 'qua': 'Quarta-feira',
+        'qui': 'Quinta-feira', 'sex': 'Sexta-feira', 'sab': 'Sábado', 'dom': 'Domingo'
+    };
+
+    // Seleciona todos os dias marcados na interface
+    const checkedDays = form.querySelectorAll('.day-checkbox:checked');
+
+    checkedDays.forEach(checkbox => {
+        const dayId = checkbox.value; // ex: 'seg'
+        const start = formData.get(`start_${dayId}`);
+        const end = formData.get(`end_${dayId}`);
+
+        if (start && end) {
+            schedule.push({
+                day_id: dayId,
+                day_label: dayMap[dayId],
+                start: start,
+                end: end
+            });
+        }
+    });
+
+    if (schedule.length === 0) {
+        alert("Por favor, selecione pelo menos um dia de aula e preencha os horários.");
+        return;
+    }
+
+    // Adiciona o JSON completo ao envio
+    courseData.schedule_json = JSON.stringify(schedule);
+
+    // --- COMPATIBILIDADE (FALLBACK) ---
+    // Preenche as colunas antigas com o primeiro horário definido para não quebrar o resto do sistema
+    courseData.dayOfWeek = schedule[0].day_label;
+    courseData.startTime = schedule[0].start;
+    courseData.endTime = schedule[0].end;
+    // ----------------------------------
+
+    // Normaliza valores vazios
     courseData.totalSlots = courseData.totalSlots || null;
     courseData.installments = courseData.installments || null;
-    courseData.dayOfWeek = courseData.dayOfWeek || null;
-    courseData.startTime = courseData.startTime || null;
-    courseData.endTime = courseData.endTime || null;
-    courseData.carga_horaria = courseData.carga_horaria || null; // <-- CAMPO NOVO
+    courseData.carga_horaria = courseData.carga_horaria || null;
 
     const submitButton = form.querySelector('button[type="submit"]');
-    if(submitButton) submitButton.disabled = true;
+    if(submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Criando...";
+    }
 
     try {
         await apiCall('createCourse', { courseData });
-        alert('Curso criado!');
+        alert('Curso criado com sucesso!');
         window.AppHandlers.handleNavigateBackToDashboard();
     } catch(e) {
+        console.error(e);
         alert(e.message || 'Erro ao criar curso.');
-        if(submitButton) submitButton.disabled = false;
+        if(submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = "Criar Curso";
+        }
     }
 }
 
@@ -35,134 +79,140 @@ export async function handleUpdateCourse(event) {
     const form = event.target;
     const formData = new FormData(form);
     const courseData = Object.fromEntries(formData.entries());
-    const courseId = parseInt(courseData.courseId, 10);
 
-    // Normaliza valores vazios ou ausentes
-    courseData.totalSlots = courseData.totalSlots || null;
-    courseData.installments = courseData.installments || null;
-    courseData.dayOfWeek = courseData.dayOfWeek || null;
-    courseData.startTime = courseData.startTime || null;
-    courseData.endTime = courseData.endTime || null;
-    courseData.carga_horaria = courseData.carga_horaria || null; // <-- CAMPO NOVO
+    // === NOVA LÓGICA DE AGENDAMENTO (IGUAL AO CREATE) ===
+    const schedule = [];
+    const dayMap = {
+        'seg': 'Segunda-feira', 'ter': 'Terça-feira', 'qua': 'Quarta-feira',
+        'qui': 'Quinta-feira', 'sex': 'Sexta-feira', 'sab': 'Sábado', 'dom': 'Domingo'
+    };
 
-    const submitButton = form.querySelector('button[type="submit"]');
-    if(submitButton) submitButton.disabled = true;
+    // Seleciona checkboxes marcados
+    const checkedDays = form.querySelectorAll('.day-checkbox:checked');
 
-    try {
-        await apiCall('updateCourse', { courseData });
-        alert('Curso atualizado!');
-        const idx = appState.courses.findIndex(c => c.id === courseId);
-        if (idx > -1) {
-             // Atualiza o estado local, garantindo tipos corretos
-             Object.assign(appState.courses[idx], {
-                 ...courseData, // Pega todos os dados do form
-                 // Sobrescreve/converte tipos se necessário
-                 totalSlots: courseData.totalSlots ? parseInt(courseData.totalSlots, 10) : null,
-                 monthlyFee: parseFloat(courseData.monthlyFee),
-                 installments: courseData.installments ? parseInt(courseData.installments, 10) : null,
-                 teacherId: parseInt(courseData.teacherId, 10)
-             });
+    checkedDays.forEach(checkbox => {
+        const dayId = checkbox.value;
+        const start = formData.get(`start_${dayId}`);
+        const end = formData.get(`end_${dayId}`);
+
+        if (start && end) {
+            schedule.push({
+                day_id: dayId,
+                day_label: dayMap[dayId],
+                start: start,
+                end: end
+            });
         }
-        window.AppHandlers.handleNavigateBackToDashboard();
-    } catch(e) {
-        alert(e.message || 'Erro ao atualizar curso.');
-        if(submitButton) submitButton.disabled = false;
-    }
-}
+    });
 
-export async function handleEndCourse(courseId) {
-    if (!appState.currentUser || !(appState.currentUser.role === 'admin' || appState.currentUser.role === 'superadmin')) return;
-    if (confirm("Tem certeza que deseja encerrar este curso? Novas matrículas serão bloqueadas.")) {
-        try {
-            await apiCall('endCourse', { courseId, adminId: appState.currentUser.id });
-            const idx = appState.courses.findIndex(c => c.id === courseId);
-            if (idx > -1) {
-                appState.courses[idx].status = 'Encerrado';
-                appState.courses[idx].closed_by_admin_id = appState.currentUser.id;
-                appState.courses[idx].closed_date = new Date().toISOString();
-            }
-            render();
-        } catch(e) { alert(e.message || 'Erro ao encerrar curso.'); }
-    }
-}
-
-export async function handleReopenCourse(courseId) {
-    if (appState.currentUser?.role !== 'superadmin') return alert('Apenas superadministradores podem reabrir cursos.');
-    if (confirm("Tem certeza que deseja reabrir este curso?")) {
-        try {
-            await apiCall('reopenCourse', { courseId });
-            const idx = appState.courses.findIndex(c => c.id === courseId);
-            if (idx > -1) {
-                appState.courses[idx].status = 'Aberto';
-                appState.courses[idx].closed_by_admin_id = null;
-                appState.courses[idx].closed_date = null;
-            }
-            render();
-        } catch(e) { alert(e.message || 'Erro ao reabrir curso.'); }
-    }
-}
-
-export async function handleSaveAttendance(event) {
-    event.preventDefault();
-    const form = event.target;
-    const courseId = parseInt(form.dataset.courseId, 10);
-    // <<< MODIFICADO: Pega a data do input específico para salvar (se existir), senão usa a data selecionada no estado >>>
-    const dateInput = form.elements.namedItem('attendanceDate');
-    const date = dateInput ? dateInput.value : appState.attendanceState.selectedDate; // Pega do form se houver, senão do estado
-    const formData = new FormData(form);
-    const absentStudentIds = formData.getAll('absent').map(id => parseInt(id, 10));
-    const submitButton = form.querySelector('button[type="submit"]');
-
-    if (!date) {
-        alert('Erro: Data não selecionada para salvar a frequência.');
+    if (schedule.length === 0) {
+        alert("Por favor, selecione pelo menos um dia de aula.");
         return;
     }
 
-    if(submitButton) submitButton.disabled = true;
+    // Adiciona o JSON ao payload
+    courseData.schedule_json = JSON.stringify(schedule);
+
+    // --- COMPATIBILIDADE COM LEGADO ---
+    courseData.dayOfWeek = schedule[0].day_label;
+    courseData.startTime = schedule[0].start;
+    courseData.endTime = schedule[0].end;
+    // ---------------------------------
+
+    courseData.totalSlots = courseData.totalSlots || null;
+    courseData.installments = courseData.installments || null;
+    courseData.carga_horaria = courseData.carga_horaria || null;
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    if(submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Salvando...";
+    }
 
     try {
-        await apiCall('saveAttendance', { courseId, date, absentStudentIds });
-        alert('Frequência salva!');
-        appState.attendanceState.history = {}; // Limpa histórico local para forçar recarga
-        render(); // Re-renderiza para atualizar a view
+        await apiCall('updateCourse', { courseData });
+        alert('Curso atualizado com sucesso!');
+        window.AppHandlers.handleNavigateBackToDashboard();
     } catch(e) {
-        alert(e.message || 'Erro ao salvar frequência.');
-    } finally {
-        if(submitButton) submitButton.disabled = false;
+        console.error(e);
+        alert(e.message || 'Erro ao atualizar curso.');
+        if(submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = "Salvar Alterações";
+        }
     }
 }
 
+export async function handleEndCourse(id) {
+    if(!confirm("Tem certeza que deseja finalizar este curso?")) return;
+    try {
+        await apiCall('endCourse', { id });
+        alert('Curso finalizado.');
+        render();
+    } catch(e) {
+        alert(e.message);
+    }
+}
 
-// <<< RENOMEADO E MODIFICADO: De Date para Month >>>
+export async function handleReopenCourse(id) {
+    if(!confirm("Deseja reabrir este curso?")) return;
+    try {
+        await apiCall('reopenCourse', { id });
+        alert('Curso reaberto.');
+        render();
+    } catch(e) {
+        alert(e.message);
+    }
+}
+
+export async function handleSaveAttendance(event, courseId) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    // Pega a data selecionada no estado (ou hoje se não houver)
+    const date = appState.attendanceState.selectedDate || new Date().toISOString().split('T')[0];
+    
+    // Checkboxes marcados representam faltas
+    const absentStudentIds = formData.getAll('attendance[]').map(id => parseInt(id));
+
+    try {
+        const response = await apiCall('saveAttendance', {
+            courseId: courseId,
+            date: date,
+            absentStudentIds: absentStudentIds
+        });
+        alert('Frequência salva com sucesso!');
+    } catch (error) {
+        console.error(error);
+        alert('Erro ao salvar frequência: ' + error.message);
+    }
+}
+
 export function handleAttendanceMonthChange(event) {
     const newMonth = event.target.value; // Formato YYYY-MM
     if (newMonth) {
         appState.attendanceState.selectedMonth = newMonth;
-        // Opcional: Atualizar selectedDate para o primeiro dia do mês novo
         const firstDayOfMonth = newMonth + '-01';
-        // Verifica se a data é válida
         if (!isNaN(new Date(firstDayOfMonth).getTime())) {
              const today = new Date().toISOString().split('T')[0];
-             // Define para o primeiro dia do mês, mas não além de hoje
              appState.attendanceState.selectedDate = firstDayOfMonth > today ? today : firstDayOfMonth;
         }
-        render(); // Re-renderiza a view com o novo mês selecionado
+        render(); 
     }
 }
 
-// <<< ADICIONADO: Handler para mudar a data específica para salvar >>>
 export function handleAttendanceDateChangeForSave(event) {
     appState.attendanceState.selectedDate = event.target.value;
-    render(); // Renderiza para atualizar a lista de alunos (presentes/ausentes) exibida no formulário
+    render(); 
 }
 
-// Adiciona as novas funções exportadas para uso global se necessário (em index.js)
 export const courseHandlers = {
     handleCreateCourse,
     handleUpdateCourse,
     handleEndCourse,
     handleReopenCourse,
     handleSaveAttendance,
-    handleAttendanceMonthChange, // <<< Nome atualizado
-    handleAttendanceDateChangeForSave // <<< Nova função
+    handleAttendanceMonthChange,
+    handleAttendanceDateChangeForSave
 };

@@ -95,6 +95,22 @@ export async function renderSystemSettingsView() {
                         </div>
                     </div>
 
+                    <div class="settings-section">
+                        <h3 class="card-title">🔄 Atualização do Sistema</h3>
+                        <div id="update-status-container">
+                            <p class="small-text">Verifique se há novas versões disponíveis no repositório.</p>
+                            <div id="update-info-display" style="display:none; margin-bottom: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px;">
+                                <strong>Versão Atual:</strong> <span id="local-version">-</span><br>
+                                <strong>Nova Versão:</strong> <span id="remote-version">-</span>
+                            </div>
+                            <button type="button" id="btn-check-update" class="action-button secondary" onclick="window.AppHandlers.handleCheckUpdate(this)">
+                                Verificar Atualização
+                            </button>
+                            <button type="button" id="btn-perform-update" class="action-button" style="display:none; margin-top: 10px;" onclick="window.AppHandlers.handlePerformUpdate(this)">
+                                ⬇️ Baixar e Instalar
+                            </button>
+                        </div>
+                    </div>
 
                     <div class="settings-section">
                         <h3 class="card-title">💾 Base de Dados</h3>

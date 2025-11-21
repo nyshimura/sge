@@ -32,129 +32,59 @@ export async function handleUpdateSystemSettings(event) {
     const settingsData = {};
     const formData = new FormData(form);
 
-    // Pega todos os campos do formulário (incluindo os hidden das outras views, se houver)
+    // Pega todos os campos do formulário
     formData.forEach((value, key) => {
-        // Ignora o input de file temporário
-        if (key !== 'certificateBackgroundImageInput_temp' && key !== 'schoolProfilePicture' && key !== 'signatureImage') {
+        // Ignora o input de file temporário se houver
+        if (key !== 'certificateBackgroundImageInput_temp') {
              settingsData[key] = value;
         }
     });
 
-    // Trata checkboxes
-    if (elements.namedItem('enableTerminationFine')) {
-        settingsData.enableTerminationFine = elements.namedItem('enableTerminationFine').checked;
-    } else {
-        // Se checkbox não está no form atual, pega valor do estado (ou default false)
-        settingsData.enableTerminationFine = appState.systemSettings?.enableTerminationFine || false;
+    // Lógica para imagem de background do certificado (Upload)
+    const fileInput = document.getElementById('certificateBackgroundImageInput');
+    if (fileInput && fileInput.files.length > 0) {
+        try {
+            const base64Img = await fileToBase64(fileInput.files[0]);
+            settingsData['certificate_background_image'] = base64Img;
+        } catch (error) {
+            console.error("Erro ao converter imagem:", error);
+            alert("Erro ao processar a imagem de fundo.");
+            if(submitButton) { submitButton.disabled = false; submitButton.textContent = 'Salvar Configurações Gerais'; }
+            return;
+        }
     }
 
-    // *** LOGS PARA IMAGEM DO CERTIFICADO ***
-    console.log("Dados lidos do form (settingsData):", settingsData);
-    const imageBase64 = settingsData.certificate_background_image; // Pega do input hidden
-    console.log("Base64 da Imagem Certificado (primeiros 100):", imageBase64 ? imageBase64.substring(0, 100) + '...' : 'Nenhuma/Removida');
-    console.log("Tamanho da string Base64 Certificado:", imageBase64 ? imageBase64.length : 0);
-    // ****************************************
+    // Checkboxes
+    settingsData['enableTerminationFine'] = form.querySelector('#enableTerminationFine')?.checked ? 1 : 0;
 
-    // Sanitização final ANTES de enviar (removidos campos de doc templates daqui)
-    const enableFine = settingsData.enableTerminationFine;
-    const fineMonthsValue = settingsData.terminationFineMonths;
-    const terminationFineMonths = Math.max(1, parseInt(fineMonthsValue, 10) || 1);
-
-    const finalSettingsData = {
-        language: settingsData.language || 'pt-BR',
-        timeZone: (settingsData.timeZone || 'America/Sao_Paulo').trim(),
-        currencySymbol: (settingsData.currencySymbol || 'R$').trim(),
-        defaultDueDay: Math.max(1, Math.min(28, parseInt(settingsData.defaultDueDay, 10) || 10)),
-        geminiApiKey: settingsData.geminiApiKey || null,
-        geminiApiEndpoint: (settingsData.geminiApiEndpoint || '').trim() || null,
-        smtpServer: (settingsData.smtpServer || '').trim() || null,
-        smtpPort: (settingsData.smtpPort || '').trim() || null,
-        smtpUser: (settingsData.smtpUser || '').trim() || null,
-        smtpPass: settingsData.smtpPass || null,
-        enableTerminationFine: enableFine ? 1 : 0,
-        terminationFineMonths: terminationFineMonths,
-        site_url: (settingsData.site_url || '').trim() || null,
-        email_approval_subject: (settingsData.email_approval_subject || '').trim() || null,
-        email_approval_body: settingsData.email_approval_body || null,
-        email_reset_subject: (settingsData.email_reset_subject || '').trim() || null,
-        email_reset_body: settingsData.email_reset_body || null,
-        // Campos do certificado (mantidos aqui)
-        certificate_template_text: settingsData.certificate_template_text || null,
-        certificate_background_image: imageBase64 || null, // Usa a variável logada
-    };
-
-    // *** LOGS ANTES DO ENVIO ***
-    console.log("Dados FINAIS a serem enviados (finalSettingsData):", finalSettingsData);
-    console.log("Base64 FINAL Certificado (primeiros 100):", finalSettingsData.certificate_background_image ? finalSettingsData.certificate_background_image.substring(0, 100) + '...' : 'NULL');
-    // ***************************
 
     try {
-        // Chama a API que salva TODOS os system settings (exceto doc templates)
-        await apiCall('updateSystemSettings', { settingsData: finalSettingsData });
-        alert('Configurações salvas!');
-        appState.systemSettings = null; // Força recarregar
-        render(); // Re-renderiza a view atual
-    } catch(e) {
-        alert(e.message || 'Erro ao salvar configurações.');
-        // Mostra erro na view correta
-        const errorElementId = appState.adminView === 'certificateTemplate' ? 'certificate-template-error' : 'settings-error';
-        const errorElement = document.getElementById(errorElementId);
-        if (errorElement) errorElement.textContent = e.message;
+        // Envia tudo para o backend
+        const response = await apiCall('updateSystemSettings', { settings: settingsData });
+
+        if (response.success) {
+             // Atualiza o estado local
+             appState.systemSettings = { ...appState.systemSettings, ...settingsData };
+             alert('Configurações salvas com sucesso!');
+        } else {
+             throw new Error(response.message || 'Erro ao salvar.');
+        }
+
+    } catch (error) {
+        console.error('Erro:', error);
+        const errorEl = document.getElementById('settings-error');
+        if(errorEl) errorEl.textContent = error.message;
+        alert('Erro ao salvar configurações: ' + error.message);
     } finally {
         if(submitButton) {
             submitButton.disabled = false;
-            // Define texto do botão
-            if (appState.adminView === 'certificateTemplate') submitButton.textContent = 'Salvar Modelo';
-            else submitButton.textContent = 'Salvar Configurações Gerais';
+            submitButton.textContent = 'Salvar Configurações Gerais';
         }
     }
 }
 
-
-// *** FUNÇÃO RESTAURADA E CORRIGIDA ***
-// Handler para salvar APENAS os templates de Contrato e Termos
-export async function handleUpdateDocumentTemplates(event) {
-    event.preventDefault();
-    const form = event.target;
-    const formData = new FormData(form);
-    // Pega apenas os dados deste formulário específico
-    const templateData = {
-        enrollmentContractText: formData.get('enrollmentContractText') || null,
-        imageTermsText: formData.get('imageTermsText') || null
-    };
-    const submitButton = form.querySelector('button[type="submit"]');
-
-    if(submitButton) {
-        submitButton.disabled = true;
-        submitButton.textContent = 'Salvando...';
-    }
-
-    console.log("Dados a serem enviados (Document Templates):", templateData); // Log
-
-    try {
-        // Chama a API específica para salvar apenas os templates de documento
-        await apiCall('updateDocumentTemplates', templateData); // Passa apenas os dados relevantes
-
-        alert('Modelos salvos!');
-        appState.systemSettings = null; // Força recarregar settings na próxima necessidade
-        window.AppHandlers.handleNavigateBackToDashboard(); // Volta para o dashboard
-    } catch(e) {
-        alert(e.message || 'Erro ao salvar modelos.');
-        const errorElement = document.getElementById('doc-template-error');
-        if (errorElement) errorElement.textContent = e.message;
-        console.error("Erro ao salvar Document Templates:", e); // Log do erro
-    } finally {
-        if(submitButton) {
-            submitButton.disabled = false;
-            submitButton.textContent = 'Salvar Modelos';
-        }
-    }
-}
-// **********************************
-
-// Handler para Exportar BD (mantido como estava)
-export async function handleExportDatabase(event) {
-    event.preventDefault();
+// Handler para Exportar BD
+export async function handleExportDatabase() {
     try{
         const data = await apiCall('exportDatabase',{},'GET');
         const str = JSON.stringify(data.exportData, null, 2);
@@ -168,8 +98,88 @@ export async function handleExportDatabase(event) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        alert('Exportação concluída!');
-    } catch(error) {
-        alert(error.message || 'Erro ao exportar dados.');
+    } catch(e) {
+        console.error(e);
+        alert("Erro ao exportar base de dados: " + e.message);
     }
 }
+
+// === NOVAS FUNÇÕES DE ATUALIZAÇÃO ===
+
+// Handler para Verificar Atualização (Botão Verificar)
+export async function handleCheckUpdate(btn) {
+    const originalText = btn.innerText;
+    btn.innerText = "Verificando...";
+    btn.disabled = true;
+    
+    const infoDisplay = document.getElementById('update-info-display');
+    const btnUpdate = document.getElementById('btn-perform-update');
+    const localVer = document.getElementById('local-version');
+    const remoteVer = document.getElementById('remote-version');
+
+    try {
+        // Chama o handler PHP dedicado
+        const response = await fetch('api/handlers/update_handler.php?action=check');
+        const data = await response.json();
+
+        if(data.error) { 
+            alert(data.error); 
+            btn.innerText = originalText;
+            return; 
+        }
+
+        // Atualiza a UI
+        if (infoDisplay) infoDisplay.style.display = 'block';
+        if (localVer) localVer.innerText = data.local_version;
+        if (remoteVer) remoteVer.innerText = data.remote_version;
+
+        if (data.has_update) {
+            btn.innerText = "Atualização Disponível!";
+            // Mostra o botão de baixar e instalar
+            if (btnUpdate) btnUpdate.style.display = 'inline-block';
+        } else {
+            btn.innerText = "Sistema Atualizado";
+            if (btnUpdate) btnUpdate.style.display = 'none';
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Erro ao verificar atualizações. Verifique sua conexão ou o console.");
+        btn.innerText = originalText;
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// Handler para Realizar Atualização (Botão Baixar e Instalar)
+export async function handlePerformUpdate(btn) {
+    if(!confirm("Atenção: O sistema será atualizado. Seus arquivos de configuração (banco de dados) serão mantidos, mas customizações no código podem ser perdidas. Recomenda-se backup. Deseja continuar?")) return;
+    
+    const originalText = btn.innerText;
+    btn.innerText = "Baixando e Instalando...";
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('api/handlers/update_handler.php?action=update');
+        const data = await response.json();
+        
+        if(data.success) {
+            alert("Atualizado com sucesso! A página será recarregada para aplicar as mudanças.");
+            window.location.reload();
+        } else {
+            alert("Erro na atualização: " + data.message);
+            btn.innerText = "Tentar Novamente";
+            btn.disabled = false;
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Erro crítico na atualização. Verifique o console do navegador.");
+        btn.innerText = "Erro";
+        btn.disabled = false;
+    }
+}
+
+// Atribuindo ao objeto global para serem acessíveis via onclick no HTML
+window.AppHandlers.handleUpdateSystemSettings = handleUpdateSystemSettings;
+window.AppHandlers.handleExportDatabase = handleExportDatabase;
+window.AppHandlers.handleCheckUpdate = handleCheckUpdate;
+window.AppHandlers.handlePerformUpdate = handlePerformUpdate;

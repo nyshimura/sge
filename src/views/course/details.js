@@ -3,13 +3,40 @@ import { apiCall } from '../../api.js';
 import { appState } from '../../state.js';
 
 export async function renderCourseDetailsView(course) {
-    const data = await apiCall('getCourseDetails', { courseId: course.id }, 'GET');
+    // 1. Busca detalhes completos (Correção do ID inclusa)
+    const data = await apiCall('getCourseDetails', { id: course.id }, 'GET');
     const { teacher, students, admin } = data;
     const allEnrollments = appState.enrollments || [];
 
     const enrolledCount = students.filter(s => s.status === 'Aprovada').length;
     const vacancies = course.totalSlots === null ? 'Ilimitadas' : Math.max(0, course.totalSlots - enrolledCount);
     let paymentInfo = course.paymentType === 'parcelado' ? `${course.installments || '?'} parcelas` : 'Recorrente';
+
+    // === LÓGICA DE EXIBIÇÃO DA AGENDA (NOVO) ===
+    let scheduleDisplay = '<span class="text-muted">Não definida</span>';
+    
+    // Tenta ler o formato novo (JSON)
+    if (course.schedule_json) {
+        try {
+            const schedule = JSON.parse(course.schedule_json);
+            if (Array.isArray(schedule) && schedule.length > 0) {
+                scheduleDisplay = `<div style="display:flex; flex-direction:column; gap:4px;">
+                    ${schedule.map(s => `
+                        <div>
+                            <strong>${s.day_label}:</strong> ${s.start} às ${s.end}
+                        </div>
+                    `).join('')}
+                </div>`;
+            }
+        } catch (e) {
+            console.error("Erro ao ler agenda JSON", e);
+        }
+    } 
+    // Fallback para formato antigo (se não tiver JSON mas tiver dados legados)
+    else if (course.dayOfWeek && course.startTime) {
+        scheduleDisplay = `${course.dayOfWeek}, das ${course.startTime} às ${course.endTime}`;
+    }
+    // =============================================
 
     let auditInfo = '';
     if (course.status === 'Encerrado' && course.closed_by_admin_id && admin) {
@@ -95,9 +122,6 @@ export async function renderCourseDetailsView(course) {
                                     <button class="action-button danger" onclick="window.AppHandlers.handleCancelEnrollment(${student.id}, ${course.id})">Trancar</button>`;
                             } else if (student.status === 'Cancelada') {
                                 actionButtons = `<button class="action-button" onclick="window.AppHandlers.handleReactivateEnrollment(${student.id}, ${course.id})">Reativar</button>`;
-                            } else if (student.status === 'Pendente') {
-                                 // Placeholder para aprovar direto daqui (complexo, geralmente feito em outra tela)
-                                 // actionButtons = `<button class="action-button" onclick="window.AppHandlers.approveFromDetails(${student.id}, ${course.id})">Aprovar?</button>`;
                             }
 
                             return `
@@ -138,8 +162,8 @@ export async function renderCourseDetailsView(course) {
                 <div><strong>Mensalidade:</strong></div>
                 <div>${course.monthlyFee ? `R$ ${Number(course.monthlyFee).toFixed(2).replace('.', ',')} (${paymentInfo})` : 'Não definido'}</div>
 
-                <div><strong>Agenda:</strong></div>
-                <div>${course.dayOfWeek && course.startTime && course.endTime ? `${course.dayOfWeek}, das ${course.startTime} às ${course.endTime}` : 'Não definida'}</div>
+                <div style="align-self: start; margin-top: 5px;"><strong>Agenda:</strong></div>
+                <div>${scheduleDisplay}</div>
             </div>
             ${auditInfo}
             <div class="course-description">

@@ -28,11 +28,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 // --- CREDENCIAIS DO BANCO DE DADOS ---
 define('DB_HOST', 'localhost');
-define('DB_USER', 'suabase');
-define('DB_PASS', 'senha');
-define('DB_NAME', 'dbname');
+define('DB_USER', 'u821635548_base');
+define('DB_PASS', '100Senha!S');
+define('DB_NAME', 'u821635548_sistema');
 
 // --- CONEXÃO COM O BANCO DE DADOS (USANDO PDO) ---
+
+/* * CONFIGURAÇÕES DE AUTO-UPDATE
+ * Defina aqui o repositório de onde virão as atualizações.
+ */
+define('REPO_OWNER', 'nyshimura'); // Seu usuário no GitHub
+define('REPO_NAME', 'sge');        // Nome do repositório
+define('REPO_BRANCH', 'main');     // Branch principal (ex: main ou master)
+// define('GITHUB_TOKEN', '');     // Opcional: Se o repositório for privado
+
 $conn = null;
 try {
     $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
