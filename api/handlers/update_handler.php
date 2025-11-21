@@ -2,14 +2,21 @@
 // api/handlers/update_handler.php
 require_once '../config.php';
 
-// Aumenta o tempo de execução para downloads lentos
+// Aumenta o tempo e memória para garantir o processo
 ini_set('max_execution_time', 300); 
+ini_set('memory_limit', '256M');
 header('Content-Type: application/json');
 
 $action = $_GET['action'] ?? '';
 
+// --- CAMINHOS ABSOLUTOS (Mais Seguro) ---
+$baseDir = realpath(__DIR__ . '/../../'); // Raiz do site
+$tempZip = $baseDir . '/temp_update.zip';
+$tempExtract = $baseDir . '/temp_update_folder';
+
 function getLocalVersion() {
-    $path = '../../package.json';
+    global $baseDir;
+    $path = $baseDir . '/package.json';
     if (!file_exists($path)) return '0.0.0';
     $content = file_get_contents($path);
     $json = json_decode($content, true);
@@ -24,9 +31,7 @@ function getRemoteVersion() {
     }
     $context = stream_context_create($opts);
     $content = @file_get_contents($url, false, $context);
-    if ($content === false) return false;
-    $json = json_decode($content, true);
-    return $json['version'] ?? false;
+    return ($content) ? (json_decode($content, true)['version'] ?? false) : false;
 }
 
 function recurseCopy($src, $dst) {
@@ -68,9 +73,8 @@ if ($action === 'check') {
 
 } elseif ($action === 'update') {
     $zipUrl = "https://github.com/" . REPO_OWNER . "/" . REPO_NAME . "/archive/refs/heads/" . REPO_BRANCH . ".zip";
-    $tempZip = '../../temp_update.zip';
-    $tempExtract = '../../temp_update_folder';
 
+    // 1. Download
     $fp = fopen($tempZip, 'w+');
     $ch = curl_init($zipUrl);
     curl_setopt($ch, CURLOPT_TIMEOUT, 300);
@@ -86,17 +90,20 @@ if ($action === 'check') {
     fclose($fp);
 
     if (!$exec || $httpCode != 200) {
-        echo json_encode(['success' => false, 'message' => 'Erro ao baixar ZIP. HTTP Code: ' . $httpCode]);
-        if(file_exists($tempZip)) unlink($tempZip);
+        @unlink($tempZip);
+        echo json_encode(['success' => false, 'message' => 'Erro download ZIP. HTTP: ' . $httpCode]);
         exit;
     }
 
+    // 2. Extração
     $zip = new ZipArchive;
     if ($zip->open($tempZip) === TRUE) {
-        deleteDirectory($tempExtract);
+        if(is_dir($tempExtract)) deleteDirectory($tempExtract);
+        
         $zip->extractTo($tempExtract);
         $zip->close();
         
+        // Localiza pasta interna do GitHub (ex: sge-main)
         $files = scandir($tempExtract);
         $internalFolder = '';
         foreach($files as $f) {
@@ -107,46 +114,56 @@ if ($action === 'check') {
         }
 
         if (!$internalFolder) {
-            echo json_encode(['success' => false, 'message' => 'Pasta interna do ZIP não encontrada.']);
+            echo json_encode(['success' => false, 'message' => 'Pasta interna inválida.']);
             exit;
         }
 
-        // Protege o config.php local
+        // 3. Segurança e Cópia
         if(file_exists($internalFolder . '/api/config.php')) {
             unlink($internalFolder . '/api/config.php');
         }
 
-        // Copia os arquivos baixados
-        recurseCopy($internalFolder, '../../');
+        // Copia para a raiz (usando caminho absoluto)
+        recurseCopy($internalFolder, $baseDir);
         
-        // === AUTO-MIGRAÇÃO DE BANCO DE DADOS ===
+        // ============================================================
+        // 4. AUTO-MIGRAÇÃO (DEBUG APRIMORADO)
+        // ============================================================
+        $migrationFile = $baseDir . '/api/auto_migrate.php';
         $migrationMsg = "";
-        // Verifica se o arquivo de migração existe (agora deve estar lá se veio no ZIP)
-        if(file_exists('../../api/auto_migrate.php')) {
-            // Inclui o arquivo para rodar as migrações
-            // O array $logs será preenchido dentro do auto_migrate.php
-            include '../../api/auto_migrate.php';
-            
-            if (isset($logs) && !empty($logs)) {
-                $migrationMsg = "\n\n[Banco de Dados]:\n" . implode("\n", $logs);
-            } else {
-                $migrationMsg = "\n\n[Banco de Dados]: Nenhuma alteração necessária.";
+
+        // Limpa cache de status de arquivo do PHP para ver o arquivo novo imediatamente
+        clearstatcache(true, $migrationFile);
+
+        if(file_exists($migrationFile)) {
+            try {
+                // Torna $conn disponível explicitamente para o include
+                global $conn; 
+                include $migrationFile;
+                
+                if (isset($logs) && is_array($logs) && !empty($logs)) {
+                    $migrationMsg = "\n\n[Banco de Dados]:\n" . implode("\n", $logs);
+                } else {
+                    $migrationMsg = "\n\n[Banco de Dados]: Verificado (Nenhuma alteração pendente).";
+                }
+            } catch (Exception $e) {
+                $migrationMsg = "\n\n[Erro Migração]: " . $e->getMessage();
             }
         } else {
-            $migrationMsg = "\n\n[Aviso]: Arquivo api/auto_migrate.php não encontrado no pacote baixado.";
+            $migrationMsg = "\n\n[Aviso]: Arquivo 'api/auto_migrate.php' não encontrado em: " . $migrationFile;
         }
-        // =======================================
+        // ============================================================
 
-        // Limpeza
-        unlink($tempZip);
+        // 5. Limpeza Final
+        @unlink($tempZip);
         deleteDirectory($tempExtract);
         
         echo json_encode([
             'success' => true, 
-            'message' => 'Arquivos atualizados com sucesso!' . $migrationMsg
+            'message' => 'Atualização concluída!' . $migrationMsg
         ]);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Erro ao descompactar o arquivo.']);
+        echo json_encode(['success' => false, 'message' => 'Erro ao abrir o ZIP.']);
     }
 } else {
     echo json_encode(['error' => 'Ação inválida']);
