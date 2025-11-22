@@ -30,7 +30,7 @@ $actionMap = [
     // User & Profile
     'getUserProfile' => __DIR__ . '/handlers/user_handlers.php',
     'getProfileData' => __DIR__ . '/handlers/user_handlers.php', // Alias importante
-    'updateUserProfile' => __DIR__ . '/handlers/user_handlers.php', // <<< AQUI ESTAVA O PROBLEMA
+    'updateUserProfile' => __DIR__ . '/handlers/user_handlers.php', 
     'uploadProfilePicture' => __DIR__ . '/handlers/user_handlers.php',
     'listUsers' => __DIR__ . '/handlers/user_handlers.php',
     'createUser' => __DIR__ . '/handlers/user_handlers.php',
@@ -59,6 +59,7 @@ $actionMap = [
     'reopenCourse' => __DIR__ . '/handlers/course_handlers.php',
     'saveAttendance' => __DIR__ . '/handlers/course_handlers.php',
     'getAttendance' => __DIR__ . '/handlers/course_handlers.php',
+    'getAttendanceData' => __DIR__ . '/handlers/course_handlers.php', // <<< ADICIONADO AQUI
     
     // Enrollment
     'initiateEnrollment' => __DIR__ . '/handlers/enrollment_handlers.php',
