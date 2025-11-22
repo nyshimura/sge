@@ -32,7 +32,7 @@ function handle_generate_contract_pdf($conn, $data) {
         $pdf = new PDF_Contract('P', 'mm', 'A4');
         $pdf->SetSidebarText($sidebarText);
         $pdf->AddPage();
-        $pdf->SetMargins(30, 25, 20); $pdf->SetAutoPageBreak(true, 25);
+        $pdf->SetMargins(20, 15, 15); $pdf->SetAutoPageBreak(true, 15);
 
         // ADICIONA LOGO CENTRALIZADO
         $posY_after_logo = add_centered_logo($pdf, $details['profilePicture'] ?? null, $tmp_files);
