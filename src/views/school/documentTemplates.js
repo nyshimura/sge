@@ -19,7 +19,7 @@ export async function renderDocumentTemplatesView() {
     const placeholders = [
         { group: 'Aluno', items: ['{{aluno_nome}}', '{{aluno_email}}', '{{aluno_rg}}', '{{aluno_cpf}}', '{{aluno_endereco}}'] },
         { group: 'Responsável', items: ['{{responsavel_nome}}', '{{responsavel_rg}}', '{{responsavel_cpf}}', '{{responsavel_email}}', '{{responsavel_telefone}}'] },
-        { group: 'Contratante (Auto)', items: ['{{contratante_nome}}', '{{contratante_rg}}', '{{contratante_cpf}}', '{{contratante_email}}', '{{contratante_endereco}}'] },
+        { group: 'Contratante (Auto)', items: ['{{contratante_nome}}', '{{contratante_rg}}', '{{contratante_cpf}}', '{{contratante_email}}', '{{clausula_financeira}}', '{{contratante_endereco}}'] },
         { group: 'Curso', items: ['{{curso_nome}}', '{{curso_mensalidade}}', '{{curso_mensalidade_extenso}}', '{{vencimento_dia}}'] },
         { group: 'Escola', items: ['{{escola_nome}}', '{{escola_cnpj}}', '{{escola_endereco}}'] },
         { group: 'Data', items: ['{{data_atual_extenso}}'] }

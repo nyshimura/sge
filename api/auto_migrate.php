@@ -74,4 +74,3 @@ if (basename(__FILE__) == basename($_SERVER['SCRIPT_FILENAME'])) {
     echo "<pre>" . print_r($logs, true) . "</pre>";
 }
 ?>
-

@@ -1,154 +1,178 @@
 // src/handlers/profileHandlers.js
-import { apiCall } from '../api.js'; // Ajuste o caminho se necessário
-import { appState } from '../state.js'; // Ajuste o caminho se necessário
-import { render } from '../router.js'; // Ajuste o caminho se necessário
-import { fileToBase64 } from '../utils/helpers.js'; // Ajuste o caminho se necessário
+import { apiCall } from '../api.js';
+import { appState } from '../state.js';
 
-// <<< FUNÇÃO handleUpdateProfile (Inalterada desta vez) >>>
-export async function handleUpdateProfile(event) {
-    event.preventDefault();
-    const form = event.target;
-    const formData = new FormData(form);
-    const userId = parseInt(formData.get('userId'), 10);
-    const profileData = {};
-    const submitButton = form.querySelector('button[type="submit"]');
-    const errorElement = document.getElementById('profile-update-error');
-    const successElement = document.getElementById('profile-update-success');
-
-    if (errorElement) errorElement.textContent = '';
-    if (successElement) successElement.textContent = '';
-
-    formData.forEach((value, key) => {
-        if (key === 'profilePicture' || key === 'age') return;
-        const optionalNullableFields = [
-            'lastName', 'address', 'rg', 'cpf', 'birthDate',
-            'guardianName', 'guardianRG', 'guardianCPF', 'guardianEmail', 'guardianPhone'
-        ];
-        if (optionalNullableFields.includes(key) && String(value).trim() === '') {
-             profileData[key] = null;
-        } else if (key === 'birthDate' && value === '') {
-             profileData[key] = null;
-        } else if (typeof value === 'string') {
-             profileData[key] = value.trim();
-        } else { profileData[key] = value; }
+// --- HELPER: Converter arquivo para Base64 ---
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
     });
+}
 
-    const profilePicInput = form.elements.namedItem('profilePicture');
-    const profilePicFile = profilePicInput?.files?.[0];
-    if (profilePicFile instanceof File && profilePicFile.size > 0) {
-         try { profileData.profilePicture = await fileToBase64(profilePicFile); }
-         catch (e) { /* ... tratamento de erro ... */ }
-    } else if (form.elements.namedItem('removeProfilePicture')?.value === 'true') {
-         profileData.profilePicture = null;
-    }
-
-    if (submitButton) submitButton.disabled = true;
-
-    try {
-        const response = await apiCall('updateProfile', { userId, profileData });
-        if (response && (response.success || response.status === 'success')) {
-            if (successElement) { successElement.textContent = 'Perfil atualizado com sucesso!'; }
-            else { alert('Perfil atualizado!'); }
-            setTimeout(() => { window.location.reload(); }, 1000);
-        } else {
-            throw new Error(response?.data?.message || 'Falha ao atualizar perfil. Resposta inesperada da API.');
-        }
-    } catch (e) {
-        console.error("Erro em handleUpdateProfile:", e);
-        if (errorElement) errorElement.textContent = e.message || 'Erro ao atualizar perfil.';
-        else alert(e.message || 'Erro ao atualizar perfil.');
-    } finally {
-        if (submitButton) submitButton.disabled = false;
+// --- HELPER: Pré-visualizar imagem (Global) ---
+export function previewImage(input, targetId) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const imgElement = document.getElementById(targetId);
+            if (imgElement) {
+                imgElement.src = e.target.result;
+            }
+        };
+        reader.readAsDataURL(input.files[0]);
     }
 }
 
-// <<< FUNÇÃO handleUpdateSchoolProfile (Inalterada desta vez) >>>
+// --- ATUALIZAR PERFIL DO USUÁRIO ---
+export async function handleUpdateUserProfile(event) {
+    event.preventDefault(); // IMPEDE O RECARREGAMENTO DA PÁGINA
+    const form = event.target;
+    const submitButton = form.querySelector('button[type="submit"]');
+    
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Salvando...';
+    }
+
+    const formData = new FormData(form);
+    const profileData = {};
+
+    // 1. Coleta campos de texto
+    formData.forEach((value, key) => {
+        // Ignora o arquivo cru, vamos processá-lo abaixo
+        if (!(value instanceof File)) {
+            profileData[key] = value;
+        }
+    });
+
+    // 2. Processa Upload de FOTO (se houver)
+    let fileInput = form.querySelector('input[type="file"]');
+    // Fallback para encontrar o input se o querySelector falhar
+    if (!fileInput) {
+        fileInput = document.getElementById('profile-upload');
+    }
+    
+    if (fileInput && fileInput.files.length > 0) {
+        try {
+            // Converte imagem para texto (Base64) para enviar via JSON
+            profileData['profilePicture'] = await fileToBase64(fileInput.files[0]);
+        } catch (e) {
+            console.error("Erro ao processar foto:", e);
+            alert("Erro ao processar a foto de perfil.");
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Salvar Alterações';
+            }
+            return;
+        }
+    }
+
+    try {
+        // Envia para API (dados planos para user_handlers.php)
+        const response = await apiCall('updateUserProfile', profileData);
+        
+        alert(response.message || 'Perfil atualizado com sucesso!');
+        
+        // Atualiza o estado local para refletir a mudança sem F5
+        if (appState.currentUser && appState.currentUser.id == profileData.id) {
+            appState.currentUser = { ...appState.currentUser, ...profileData };
+            localStorage.setItem('currentUser', JSON.stringify(appState.currentUser));
+        }
+        
+        // Atualiza a foto no topo (Header) se ela mudou
+        if (profileData['profilePicture']) {
+             const headerAvatars = document.querySelectorAll('.user-avatar, .profile-pic-header, #header-user-avatar, .logo-img'); 
+             headerAvatars.forEach(img => img.src = profileData['profilePicture']);
+        }
+
+    } catch (error) {
+        console.error(error);
+        alert('Erro ao atualizar perfil: ' + error.message);
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Salvar Alterações';
+        }
+    }
+}
+
+// --- ATUALIZAR PERFIL DA ESCOLA (UE) ---
 export async function handleUpdateSchoolProfile(event) {
     event.preventDefault();
     const form = event.target;
-    const formData = new FormData(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+    
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Salvando...';
+    }
+
     const profileData = {};
-    const submitButton = form.querySelector('button[type="submit"]');
-    const errorElement = document.getElementById('school-profile-update-error');
-    const successElement = document.getElementById('school-profile-update-success');
-    if (errorElement) errorElement.textContent = ''; if (successElement) successElement.textContent = '';
-    formData.forEach((value, key) => { if (!['schoolProfilePicture', 'signatureImage'].includes(key)) { profileData[key] = typeof value === 'string' ? value.trim() : value; } });
-    const schoolPicInput = form.elements.namedItem('schoolProfilePicture'); const schoolPicFile = schoolPicInput?.files?.[0];
-    if (schoolPicFile instanceof File && schoolPicFile.size > 0) { try { profileData.profilePicture = await fileToBase64(schoolPicFile); } catch (e) { if (errorElement) errorElement.textContent = 'Erro ao processar logo da escola.'; else alert('Erro ao processar logo da escola.'); if (submitButton) submitButton.disabled = false; return; } } else if (form.elements.namedItem('removeSchoolProfilePicture')?.value === 'true') { profileData.profilePicture = null; }
-    const signatureInput = form.elements.namedItem('signatureImage'); const signatureFile = signatureInput?.files?.[0];
-    if (signatureFile instanceof File && signatureFile.size > 0) { try { profileData.signatureImage = await fileToBase64(signatureFile); } catch (e) { if (errorElement) errorElement.textContent = 'Erro ao processar imagem da assinatura.'; else alert('Erro ao processar imagem da assinatura.'); if (submitButton) submitButton.disabled = false; return; } } else if (form.elements.namedItem('removeSignatureImage')?.value === 'true') { profileData.signatureImage = null; }
-    if (submitButton) submitButton.disabled = true;
-    try { const response = await apiCall('updateSchoolProfile', { profileData }); if (response && response.success && response.profile) { appState.schoolProfile = response.profile; if (successElement) successElement.textContent = 'Dados da unidade atualizados!'; else alert('Dados da unidade atualizados!'); setTimeout(() => render(), 500); } else { throw new Error(response?.data?.message || 'Falha ao atualizar dados. Resposta inesperada.'); } } catch (e) { console.error("Erro em handleUpdateSchoolProfile:", e); if (errorElement) errorElement.textContent = e.message || 'Erro ao atualizar dados da unidade.'; else alert(e.message || 'Erro ao atualizar dados da unidade.'); } finally { if (submitButton) submitButton.disabled = false; }
-}
-
-
-// <<< FUNÇÃO MODIFICADA (handleChangePassword com trim() E confirmPassword na API call) >>>
-export async function handleChangePassword(event) {
-    event.preventDefault();
-    const form = event.target;
     const formData = new FormData(form);
-    const userId = parseInt(formData.get('userId'), 10);
 
-    // Aplica trim() aqui para remover espaços extras
-    const currentPassword = formData.get('currentPassword')?.trim();
-    const newPassword = formData.get('newPassword')?.trim();
-    const confirmPassword = formData.get('confirmPassword')?.trim();
+    formData.forEach((value, key) => {
+        if (!(value instanceof File)) {
+            profileData[key] = value;
+        }
+    });
 
-    const submitButton = form.querySelector('button[type="submit"]');
-    const errorElement = document.getElementById('change-password-error');
-    if (errorElement) errorElement.textContent = '';
-
-    // Agora a verificação usa os valores "limpos"
-    if (!currentPassword || !newPassword || !confirmPassword) {
-        const msg = "Preencha todos os campos de senha.";
-        if (errorElement) errorElement.textContent = msg;
-        else alert(msg);
-        return; // Para a execução
-    }
-    if (newPassword !== confirmPassword) {
-        const msg = 'As novas senhas não coincidem.';
-        if (errorElement) errorElement.textContent = msg;
-        else alert(msg);
-        return;
-    }
-    if (newPassword.length < 6) {
-        const msg = 'A nova senha deve ter pelo menos 6 caracteres.';
-        if (errorElement) errorElement.textContent = msg;
-        else alert(msg);
-        return;
+    // Logo
+    const logoInput = document.getElementById('logo-upload');
+    if (logoInput && logoInput.files.length > 0) {
+        try {
+            profileData['profilePicture'] = await fileToBase64(logoInput.files[0]);
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao processar o Logo.");
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Salvar Dados da Escola';
+            }
+            return;
+        }
     }
 
-    if (submitButton) submitButton.disabled = true;
+    // Assinatura
+    const sigInput = document.getElementById('signature-upload');
+    if (sigInput && sigInput.files.length > 0) {
+        try {
+            profileData['signatureImage'] = await fileToBase64(sigInput.files[0]);
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao processar a Assinatura.");
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Salvar Dados da Escola';
+            }
+            return;
+        }
+    }
 
     try {
-        // <<< ALTERAÇÃO AQUI: Enviando confirmPassword para a API >>>
-        const response = await apiCall('changePassword', { userId, currentPassword, newPassword, confirmPassword });
+        // Nota: School profile espera empacotado em 'profile'
+        const response = await apiCall('updateSchoolProfile', { profile: profileData });
+        alert(response.message || 'Perfil da escola atualizado!');
+        appState.schoolProfile = { ...appState.schoolProfile, ...profileData };
 
-        if (response && response.success) {
-            alert('Senha alterada com sucesso!');
-            form.reset();
-        } else {
-             // Tenta pegar a mensagem de erro específica da API
-            throw new Error(response?.data?.message || response?.message || 'Falha ao alterar senha.');
+        if (profileData['profilePicture']) {
+             const headerLogo = document.querySelector('.logo-img');
+             if(headerLogo) headerLogo.src = profileData['profilePicture'];
         }
-    } catch (e) {
-        console.error("Erro em handleChangePassword:", e);
-        if (errorElement) errorElement.textContent = e.message || 'Erro ao alterar senha.';
-        else alert(e.message || 'Erro ao alterar senha.');
+    } catch (error) {
+        alert('Erro: ' + error.message);
     } finally {
-        if (submitButton) submitButton.disabled = false;
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Salvar Dados da Escola';
+        }
     }
 }
 
-// <<< Funções previewImage e removeProfileImage INALTERADAS >>>
-export function previewImage(event, previewElementId) {
-    const input = event.target; const preview = document.getElementById(previewElementId); if (input.files && input.files[0] && preview) { const reader = new FileReader(); reader.onload = (e) => { if (e.target?.result) { preview.src = e.target.result; preview.style.display = 'block'; } }; reader.readAsDataURL(input.files[0]); const removeInputId = previewElementId.replace('-preview', '-remove'); const removeInput = document.getElementById(removeInputId); if (removeInput) removeInput.value = 'false'; }
-}
-
-export function removeProfileImage() {
-    const preview = document.getElementById('profile-pic-preview'); const input = document.getElementById('profilePictureInput'); let removeInput = document.getElementById('removeProfilePicture'); if (!removeInput && preview) { removeInput = document.createElement('input'); removeInput.type = 'hidden'; removeInput.id = 'removeProfilePicture'; removeInput.name = 'removeProfilePicture'; preview.closest('form').appendChild(removeInput); }
-    if (preview) { preview.src = 'assets/default-user.png'; } if (input) { input.value = ''; } if (removeInput) { removeInput.value = 'true'; }
-}
-
-// <<< Exportação final do módulo >>>
-export const profileHandlers = { handleUpdateProfile, handleUpdateSchoolProfile, handleChangePassword, previewImage, removeProfileImage };
+// REGISTRO GLOBAL DAS FUNÇÕES (Essencial para o HTML funcionar)
+window.AppHandlers = window.AppHandlers || {};
+window.AppHandlers.handleUpdateUserProfile = handleUpdateUserProfile;
+window.AppHandlers.handleUpdateSchoolProfile = handleUpdateSchoolProfile;
+window.AppHandlers.previewImage = previewImage;
