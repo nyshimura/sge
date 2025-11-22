@@ -44,9 +44,9 @@ $migrations = [
         'command' => "ALTER TABLE courses ADD COLUMN schedule_json TEXT DEFAULT NULL COMMENT 'Armazena horários múltiplos em JSON'"
     ],
     [
-        'table'   => 'courses',
-        'column'  => 'carga_horaria',
-        'command' => "ALTER TABLE courses ADD COLUMN carga_horaria VARCHAR(50) DEFAULT NULL COMMENT 'Ex: 40 horas'"
+        'table'   => 'users',
+        'column'  => 'phone',
+        'command' => "ALTER TABLE `users` ADD COLUMN `phone` VARCHAR(20) DEFAULT NULL COMMENT 'Telefone pessoal do aluno/usuario' AFTER `email`"
     ],
     [
         'table'   => 'courses',
@@ -74,3 +74,4 @@ if (basename(__FILE__) == basename($_SERVER['SCRIPT_FILENAME'])) {
     echo "<pre>" . print_r($logs, true) . "</pre>";
 }
 ?>
+
