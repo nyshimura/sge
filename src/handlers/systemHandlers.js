@@ -17,7 +17,7 @@ window.AppHandlers = window.AppHandlers || {};
 window.AppHandlers.fileToBase64 = fileToBase64;
 
 
-// Handler para salvar Configurações Gerais E o Template de Certificado
+// Handler para salvar Configurações Gerais (Logo, Cores, etc)
 export async function handleUpdateSystemSettings(event) {
     event.preventDefault();
     const form = event.target;
@@ -33,7 +33,6 @@ export async function handleUpdateSystemSettings(event) {
 
     // Pega todos os campos do formulário
     formData.forEach((value, key) => {
-        // Ignora campos temporários
         if (key !== 'certificateBackgroundImageInput_temp') {
              settingsData[key] = value;
         }
@@ -53,20 +52,17 @@ export async function handleUpdateSystemSettings(event) {
     }
 
     // Checkboxes
-    settingsData['enableTerminationFine'] = form.querySelector('#enableTerminationFine')?.checked ? 1 : 0;
+    const terminationCheck = form.querySelector('#enableTerminationFine');
+    if (terminationCheck) {
+        settingsData['enableTerminationFine'] = terminationCheck.checked ? 1 : 0;
+    }
 
     try {
-        // CORREÇÃO IMPORTANTE AQUI:
-        // O apiCall joga um erro automaticamente se a API retornar sucesso falso.
-        // Portanto, se essa linha passar sem erro, significa que DEU CERTO.
-        // Não precisamos verificar 'if (response.success)', pois 'response' contém apenas os dados (message).
-        
         const responseData = await apiCall('updateSystemSettings', { settings: settingsData });
-
+        
         // Atualiza o estado local
         appState.systemSettings = { ...appState.systemSettings, ...settingsData };
         
-        // Exibe mensagem de sucesso vinda do servidor ou padrão
         alert(responseData.message || 'Configurações salvas com sucesso!');
 
     } catch (error) {
@@ -81,6 +77,50 @@ export async function handleUpdateSystemSettings(event) {
         }
     }
 }
+
+// === NOVA FUNÇÃO CORRIGIDA: Salvar Modelos de Contrato/Termos ===
+export async function handleUpdateDocumentTemplates(event) {
+    event.preventDefault(); // Impede o envio pela URL (Correção principal)
+    const form = event.target;
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    if(submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Salvando...';
+    }
+
+    const settingsData = {};
+    const formData = new FormData(form);
+
+    // Captura os campos de texto (enrollmentContractText, imageTermsText)
+    formData.forEach((value, key) => {
+        settingsData[key] = value;
+    });
+
+    try {
+        // Chama a API específica para templates
+        const responseData = await apiCall('updateDocumentTemplates', { settings: settingsData });
+        
+        // Atualiza o estado local para refletir a mudança sem precisar recarregar
+        if (appState.systemSettings) {
+            appState.systemSettings = { ...appState.systemSettings, ...settingsData };
+        }
+
+        alert(responseData.message || 'Modelos atualizados com sucesso!');
+
+    } catch (error) {
+        console.error('Erro:', error);
+        const errorEl = document.getElementById('doc-template-error');
+        if(errorEl) errorEl.textContent = error.message;
+        alert('Erro ao salvar modelos: ' + error.message);
+    } finally {
+        if(submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Salvar Modelos';
+        }
+    }
+}
+// ==============================================================
 
 // Handler para Exportar BD
 export async function handleExportDatabase() {
@@ -103,9 +143,7 @@ export async function handleExportDatabase() {
     }
 }
 
-// === FUNÇÕES DE ATUALIZAÇÃO ===
-
-// Handler para Verificar Atualização (Botão Verificar)
+// Handler para Verificar Atualização
 export async function handleCheckUpdate(btn) {
     const originalText = btn.innerText;
     btn.innerText = "Verificando...";
@@ -146,7 +184,7 @@ export async function handleCheckUpdate(btn) {
     }
 }
 
-// Handler para Realizar Atualização (Botão Baixar e Instalar)
+// Handler para Realizar Atualização
 export async function handlePerformUpdate(btn) {
     if(!confirm("Atenção: O sistema será atualizado. Recomenda-se backup. Continuar?")) return;
     
@@ -176,8 +214,9 @@ export async function handlePerformUpdate(btn) {
     }
 }
 
-// Atribuindo ao objeto global
+// Atribuindo ao objeto global para serem acessíveis via onclick no HTML
 window.AppHandlers.handleUpdateSystemSettings = handleUpdateSystemSettings;
+window.AppHandlers.handleUpdateDocumentTemplates = handleUpdateDocumentTemplates; // <<< ADICIONADO
 window.AppHandlers.handleExportDatabase = handleExportDatabase;
 window.AppHandlers.handleCheckUpdate = handleCheckUpdate;
 window.AppHandlers.handlePerformUpdate = handlePerformUpdate;
