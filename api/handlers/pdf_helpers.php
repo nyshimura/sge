@@ -2,66 +2,135 @@
 // api/handlers/pdf_helpers.php
 
 /**
- * Converte string para ISO-8859-1.
+ * Converte string UTF-8 para ISO-8859-1 (compatibilidade FPDF).
  */
-if (!function_exists('to_iso')) {
-    function to_iso($string) {
-        $iso = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $string ?? '');
-        if ($iso === false) {
-            $iso = iconv('UTF-8', 'ISO-8859-1//IGNORE', $string ?? '');
-        }
-        return $iso;
-    }
+function to_iso($str) {
+    return iconv('UTF-8', 'windows-1252//TRANSLIT', $str);
 }
 
 /**
- * Converte valor numérico para extenso.
+ * Adiciona um logo centralizado no PDF (usado em certificados e contratos).
+ * Suporta imagem em Base64 ou caminho de arquivo.
+ * Retorna a posição Y logo após a imagem.
  */
-if (!function_exists('valorPorExtenso')) {
-    function valorPorExtenso($valor = 0) {
-        // ... (Seu código completo da função valorPorExtenso) ...
-        // Simplesmente copie e cole a função inteira aqui
-        return "valor por extenso"; // Substitua pelo seu código real
-    }
-}
+function add_centered_logo($pdf, $imgData, &$tmpFilesArray) {
+    $startY = $pdf->GetY();
+    if (empty($imgData)) return $startY;
 
-/**
- * Função auxiliar para adicionar logo centralizado
- */
-function add_centered_logo(&$pdf, $logoBase64, &$tmp_files_array) {
-    if (empty($logoBase64)) return 15; // Retorna espaço padrão se não houver logo
+    $tmp_path = null;
 
-    $logo_y = 15; // Posição Y (margem superior)
-    $logo_width = 30; // Largura desejada do logo em mm
-
-    try {
-        $img_data = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $logoBase64));
-        if ($img_data === false) throw new Exception('Falha ao decodificar logo base64.');
-        
-        $finfo = finfo_open(); 
-        $mime = finfo_buffer($finfo, $img_data, FILEINFO_MIME_TYPE); 
-        finfo_close($finfo);
-        
-        $ext = ($mime === 'image/jpeg') ? '.jpg' : '.png'; // Ajuste se precisar suportar mais tipos
-        $tmp_logo_path = sys_get_temp_dir() . '/logo_sge_' . uniqid() . $ext;
-        
-        if (!file_put_contents($tmp_logo_path, $img_data)) { 
-            throw new Exception('Falha ao salvar logo temporário.'); 
+    // Se for Base64
+    if (strpos($imgData, 'data:image') === 0) {
+        $data = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $imgData));
+        if ($data) {
+            // Detecta extensão (jpg/png)
+            $finfo = finfo_open();
+            $mime = finfo_buffer($finfo, $data, FILEINFO_MIME_TYPE);
+            finfo_close($finfo);
+            $ext = ($mime === 'image/png') ? '.png' : '.jpg';
+            
+            $tmp_path = sys_get_temp_dir() . '/doc_logo_' . uniqid() . $ext;
+            file_put_contents($tmp_path, $data);
+            $tmpFilesArray[] = $tmp_path;
         }
+    } else {
+        // Se for caminho de arquivo (e existir)
+        if (file_exists($imgData)) {
+            $tmp_path = $imgData;
+        }
+    }
+
+    if ($tmp_path && file_exists($tmp_path)) {
+        // Tamanho fixo para o logo no cabeçalho
+        $width = 30; 
+        $height = 30;
         
-        $tmp_files_array[] = $tmp_logo_path; // Adiciona à lista para limpeza posterior
-        
+        // Centraliza na página
         $pageWidth = $pdf->GetPageWidth();
-        $logo_x = ($pageWidth - $logo_width) / 2; // Calcula X para centralizar
+        $x = ($pageWidth - $width) / 2;
         
-        $pdf->Image($tmp_logo_path, $logo_x, $logo_y, $logo_width);
-        
-        return $logo_y + 20; // Retorna um Y aproximado abaixo do logo (ajuste 20 se necessário)
-
-    } catch (Exception $e) {
-        error_log("Erro ao processar/adicionar logo: " . $e->getMessage());
-        return 15; // Retorna espaço padrão em caso de erro
+        $pdf->Image($tmp_path, $x, $startY, $width, $height);
+        return $startY + $height; // Retorna nova posição Y
     }
+
+    return $startY;
 }
 
+/**
+ * Converte um valor numérico (float) para texto por extenso (BRL).
+ * Ex: 90.50 -> noventa reais e cinquenta centavos
+ */
+function valorPorExtenso($valor = 0, $maiusculas = false) {
+    // Limpa formatação se vier como string (ex: 1.200,00 -> 1200.00)
+    if (is_string($valor) && strpos($valor, ',') !== false) {
+        $valor = str_replace('.', '', $valor);
+        $valor = str_replace(',', '.', $valor);
+    }
+
+    $valor = (float)$valor;
+    if($valor == 0) return "zero";
+
+    $singular = ["centavo", "real", "mil", "milhão", "bilhão", "trilhão", "quatrilhão"];
+    $plural = ["centavos", "reais", "mil", "milhões", "bilhões", "trilhões", "quatrilhões"];
+
+    $c = ["", "cem", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+    $d = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
+    $d10 = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
+    $u = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
+
+    $z = 0;
+    // Formata com 2 casas decimais
+    $valor = number_format($valor, 2, ".", ".");
+    $inteiro = explode(".", $valor);
+    
+    $rt = "";
+    
+    // Adiciona zeros à esquerda para completar trios (ex: 1 -> 001)
+    for($i=0; $i<count($inteiro); $i++) {
+        for($ii=strlen($inteiro[$i]); $ii<3; $ii++) {
+            $inteiro[$i] = "0".$inteiro[$i];
+        }
+    }
+
+    $fim = count($inteiro) - ($inteiro[count($inteiro)-1] > 0 ? 1 : 2);
+    
+    for ($i=0; $i<count($inteiro); $i++) {
+        $valor = $inteiro[$i];
+        
+        // Cento ou Cem?
+        $rc = (($valor > 100) && ($valor < 200)) ? "cento" : $c[$valor[0]];
+        // Dezenas
+        $rd = ($valor[1] < 2) ? "" : $d[$valor[1]];
+        // Unidades ou Dez a Dezenove
+        $ru = ($valor > 0) ? (($valor[1] == 1) ? $d10[$valor[2]] : $u[$valor[2]]) : "";
+
+        // Concatena as partes (cento E vinte E cinco)
+        $r = $rc . (($rc && ($rd || $ru)) ? " e " : "") . $rd . (($rd && $ru) ? " e " : "") . $ru;
+        
+        // Define a escala (mil, milhão, etc)
+        $t = count($inteiro)-1-$i;
+        
+        // Adiciona o nome da escala no plural ou singular
+        $r .= $r ? " ".($valor > 1 ? $plural[$t] : $singular[$t]) : "";
+        
+        if ($valor == "000") $z++; elseif ($z > 0) $z--;
+        
+        // Lógica do "de" (um milhão DE reais)
+        if (($t==1) && ($z>0) && ($inteiro[0] > 0)) $r .= (($z>1) ? " de " : "").$plural[$t];
+        
+        if ($r) {
+            // Vírgula ou "e" entre as partes maiores
+            $rt = $rt . ((($i > 0) && ($i <= $fim) && ($inteiro[0] > 0) && ($z < 1)) ? ( ($i < $fim) ? ", " : " e ") : " ") . $r;
+        }
+    }
+
+    // Remove espaços extras
+    $rt = trim($rt);
+
+    if(!$maiusculas){
+        return $rt;
+    } else {
+        return strtoupper($rt);
+    }
+}
 ?>
