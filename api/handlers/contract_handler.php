@@ -20,9 +20,7 @@ function handle_generate_contract_pdf($conn, $data) {
     $studentId = isset($_GET['studentId']) ? (int)$_GET['studentId'] : 0;
     $courseId = isset($_GET['courseId']) ? (int)$_GET['courseId'] : 0;
 
-    // --- LÓGICA DE REDIRECIONAMENTO INTELIGENTE ---
-    
-    // A. Se não estiver logado
+    // --- 1. REDIRECIONAMENTO INTELIGENTE (Login) ---
     if (!isset($_SESSION['user_id'])) {
         $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http");
         $currentLink = "$protocol://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
@@ -31,31 +29,43 @@ function handle_generate_contract_pdf($conn, $data) {
         exit;
     }
 
-    // B. Busca detalhes do contrato
+    // --- 2. BUSCA DADOS ---
     if ($studentId <= 0 || $courseId <= 0) {
-        die("Link inválido ou incompleto.");
+        die("Link inválido.");
     }
 
     $details = get_document_details($conn, $studentId, $courseId);
     
     if (!$details) {
-        die("Matrícula não encontrada ou dados indisponíveis.");
+        die("Matrícula não encontrada.");
     }
 
-    // C. Verifica Permissões (Aluno, Admin ou RESPONSÁVEL)
-    $currentUserId = $_SESSION['user_id'];
-    $currentUserRole = $_SESSION['role'] ?? '';
+    // --- 3. VERIFICAÇÃO DE PERMISSÃO ---
     
+    $currentUserId = $_SESSION['user_id'];
+    
+    // CORREÇÃO AQUI: Tenta 'user_role' (padrão do index.php) e 'role' (possível legado)
+    $currentUserRole = $_SESSION['user_role'] ?? $_SESSION['role'] ?? '';
+    
+    // Busca e-mail do usuário logado
     $stmtUser = $conn->prepare("SELECT email FROM users WHERE id = ?");
     $stmtUser->execute([$currentUserId]);
-    $currentUserEmail = $stmtUser->fetchColumn();
+    $currentUserEmail = trim($stmtUser->fetchColumn());
+    $guardianEmail = isset($details['guardianEmail']) ? trim($details['guardianEmail']) : '';
 
+    // Definição dos Papéis:
+    
+    // A. É o próprio aluno?
     $isStudent = ($currentUserId == $studentId);
-    $isAdmin = ($currentUserRole === 'admin' || $currentUserRole === 'superadmin' || $currentUserRole === 'teacher'); 
-    $isGuardian = (!empty($details['guardianEmail']) && strcasecmp($currentUserEmail, $details['guardianEmail']) === 0);
+    
+    // B. É Admin ou Superadmin?
+    $isAdmin = ($currentUserRole === 'admin' || $currentUserRole === 'superadmin'); 
+    
+    // C. É o Responsável Financeiro?
+    $isGuardian = (!empty($guardianEmail) && strcasecmp($currentUserEmail, $guardianEmail) === 0);
 
+    // Bloqueio de Segurança
     if (!$isStudent && !$isAdmin && !$isGuardian) {
-        // --- MUDANÇA AQUI: HTML COMPLETO COM TEMA ---
         header('Content-Type: text/html; charset=utf-8');
         echo "
         <!DOCTYPE html>
@@ -68,24 +78,20 @@ function handle_generate_contract_pdf($conn, $data) {
         </head>
         <body>
             <div class='app-content' style='display: flex; justify-content: center; align-items: center; min-height: 80vh;'>
-                <div class='auth-container' style='max-width: 500px; width: 100%;'>
-                    <h2 class='error-message' style='font-size: 1.8rem; margin-bottom: 20px;'>🚫 Acesso Negado</h2>
+                <div class='auth-container' style='max-width: 500px; width: 100%; text-align: center;'>
+                    <h2 class='error-message' style='font-size: 1.8rem; margin-bottom: 20px;'>🚫 Acesso Restrito</h2>
                     
-                    <div class='list-item' style='flex-direction: column; align-items: flex-start; margin-bottom: 20px;'>
-                        <span class='list-item-subtitle'>Você está logado como:</span>
-                        <span class='list-item-title'>" . htmlspecialchars($currentUserEmail) . "</span>
-                    </div>
-
-                    <div class='list-item' style='flex-direction: column; align-items: flex-start; margin-bottom: 20px;'>
-                        <span class='list-item-subtitle'>Este contrato pertence ao aluno(a):</span>
-                        <span class='list-item-title'>" . htmlspecialchars($details['firstName']) . "</span>
-                    </div>
-
-                    <p style='color: var(--text-muted); margin-bottom: 30px; font-size: 0.95rem;'>
-                        Se você é o responsável, verifique se está usando o <strong>mesmo e-mail</strong> cadastrado na matrícula.
-                    </p>
+                    <p>Você está logado como: <strong>" . htmlspecialchars($currentUserEmail) . "</strong></p>
+                    <p>Cargo: <strong>" . htmlspecialchars($currentUserRole) . "</strong></p>
+                    <p>Contrato do aluno(a): <strong>" . htmlspecialchars($details['firstName']) . "</strong></p>
                     
-                    <a href='../index.html#dashboard' class='auth-button' style='text-decoration: none; display: block; text-align: center;'>
+                    <div style='background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0; font-size: 0.9rem; text-align: left;'>
+                        <strong>Motivo:</strong><br>
+                        Seu usuário não tem permissão para ver este documento.<br>
+                        Apenas Aluno, Responsável ou Admin têm acesso.
+                    </div>
+                    
+                    <a href='../index.html#dashboard' class='auth-button' style='text-decoration: none; display: block;'>
                         Voltar ao Painel
                     </a>
                 </div>
@@ -95,10 +101,11 @@ function handle_generate_contract_pdf($conn, $data) {
         exit;
     }
 
+    // --- 4. GERAÇÃO DO PDF ---
     $tmp_files = []; 
     try {
         if (empty($details['enrollmentContractText'])) { 
-            throw new Exception("Texto do contrato não configurado."); 
+            throw new Exception("Texto do contrato não configurado no sistema."); 
         }
         
         $replacements = get_placeholders($details);
@@ -108,7 +115,10 @@ function handle_generate_contract_pdf($conn, $data) {
         }
 
         // Sidebar Text
-        $formattedAcceptedAt = "N/A"; $documentHash = "N/A"; $acceptedAtTimestamp = time();
+        $formattedAcceptedAt = "N/A"; 
+        $documentHash = "N/A"; 
+        $acceptedAtTimestamp = time();
+        
         if (!empty($details['contractAcceptedAt'])) { 
             try { 
                 $dateUTC = new DateTime($details['contractAcceptedAt'], new DateTimeZone('UTC')); 
@@ -125,7 +135,6 @@ function handle_generate_contract_pdf($conn, $data) {
         $pdf = new PDF_Contract('P', 'mm', 'A4');
         $pdf->SetSidebarText($sidebarText);
         $pdf->AddPage();
-        // Margens ajustadas
         $pdf->SetMargins(20, 15, 15); 
         $pdf->SetAutoPageBreak(true, 15);
 
@@ -189,8 +198,10 @@ function handle_generate_contract_pdf($conn, $data) {
 
     } catch (Exception $e) {
         foreach ($tmp_files as $file) { if (file_exists($file)) @unlink($file); } 
-        error_log("!!! Erro FATAL PDF contrato S:$studentId, C:$courseId: ".$e->getMessage() . " em " . $e->getFile() . ":" . $e->getLine());
-        header("HTTP/1.1 500 Internal Server Error"); header("Content-Type: text/plain; charset=utf-8"); echo "Erro interno ao gerar PDF."; exit;
+        error_log("Erro FATAL PDF: ".$e->getMessage());
+        header("HTTP/1.1 500 Internal Server Error"); 
+        echo "Erro interno ao gerar PDF: " . $e->getMessage(); 
+        exit;
     }
 }
 ?>
