@@ -2,19 +2,69 @@
 import { apiCall } from '../../api.js';
 import { appState } from '../../state.js';
 
-// --- DEFINIÇÃO DAS FUNÇÕES (Escopo do Módulo) ---
 
-// 1. Função de Filtragem
+// --- FUNÇÕES LOCAIS (Não precisam ser exportadas ou globais) ---
+
+/**
+ * Função interna para processar a mudança de cargo.
+ * Como é local, ela tem acesso garantido ao 'apiCall' importado acima.
+ */
+async function processRoleChange(userId, newRole) {
+    if (!confirm(`Tem certeza que deseja alterar o cargo deste usuário para "${newRole}"?`)) {
+        // Se cancelar, recarrega a lista para voltar o select ao valor original
+        handleManagementFilterChange();
+        return;
+    }
+
+    try {
+        // Chamada direta à API importada (sem window.AppHandlers)
+        const response = await apiCall('updateUserRole', { userId, newRole });
+        alert(response.message || 'Cargo atualizado com sucesso!');
+        
+        // Atualiza a lista para refletir mudanças
+        handleManagementFilterChange();
+
+    } catch (error) {
+        console.error("Erro ao mudar cargo:", error);
+        alert('Erro ao atualizar cargo: ' + (error.message || error));
+        handleManagementFilterChange(); // Recarrega em caso de erro
+    }
+}
+
+/**
+ * Adiciona os eventos aos selects após eles serem desenhados na tela.
+ * Esta é a chave da nova abordagem.
+ */
+function attachSelectListeners() {
+    // Busca todos os selects que criamos com a classe específica
+    const selects = document.querySelectorAll('.user-role-select');
+    
+    selects.forEach(select => {
+        // Remove ouvintes antigos para evitar duplicação (boa prática)
+        select.onchange = null; 
+        
+        // Adiciona o novo ouvinte diretamente via JS
+        select.onchange = (event) => {
+            const userId = event.target.dataset.userid; // Pega o ID do atributo data-userid
+            const newRole = event.target.value;         // Pega o valor selecionado
+            
+            // Chama a função local
+            processRoleChange(userId, newRole);
+        };
+    });
+}
+
+// --- FUNÇÕES EXPORTADAS (Lógica da View) ---
+
+// 1. Função de Filtragem e Renderização
 async function handleManagementFilterChange() {
     const tbody = document.getElementById('user-list-body');
     if (!tbody) return;
 
-    // Captura segura dos elementos
     const roleEl = document.getElementById('filter-role');
     const courseEl = document.getElementById('filter-course');
     const searchEl = document.getElementById('filter-search');
 
-    // Valores padrão
     const role = roleEl ? roleEl.value : 'all';
     const courseId = courseEl ? courseEl.value : '';
     const search = searchEl ? searchEl.value : '';
@@ -22,7 +72,6 @@ async function handleManagementFilterChange() {
     tbody.innerHTML = '<tr><td colspan="4" style="padding: 20px; text-align: center; color: var(--text-muted);">Buscando...</td></tr>';
 
     try {
-        // Chama a API
         const response = await apiCall('getFilteredUsers', { role, courseId, search }, 'GET');
         const users = response.users || [];
 
@@ -31,28 +80,36 @@ async function handleManagementFilterChange() {
             return;
         }
 
-        // Renderiza linhas da tabela
-        tbody.innerHTML = users.map(user => `
+        // Renderiza o HTML
+        // NOTA: Removemos o 'onchange="..."' do HTML e adicionamos classe e data-attribute
+        tbody.innerHTML = users.map(user => {
+            const currentRole = user.role || 'unassigned';
+            return `
             <tr style="border-bottom: 1px solid var(--border-color);">
                 <td style="padding: 10px;">
                     <strong>${user.firstName} ${user.lastName || ''}</strong>
                 </td>
                 <td style="padding: 10px;">${user.email}</td>
                 <td style="padding: 10px;">
-                    <select onchange="window.AppHandlers.handleRoleChange(event, ${user.id})" 
+                    <select class="user-role-select" 
+                            data-userid="${user.id}"
                             style="padding: 4px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 0.9rem; background-color: var(--input-bg); color: var(--text-color);">
-                        <option value="unassigned" ${user.role === 'unassigned' ? 'selected' : ''}>Novo/Sem Cargo</option>
-                        <option value="student" ${user.role === 'student' ? 'selected' : ''}>Aluno</option>
-                        <option value="teacher" ${user.role === 'teacher' ? 'selected' : ''}>Professor</option>
-                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
-                        <option value="superadmin" ${user.role === 'superadmin' ? 'selected' : ''}>Super Admin</option>
+                        <option value="unassigned" ${currentRole === 'unassigned' ? 'selected' : ''}>Novo/Sem Cargo</option>
+                        <option value="student" ${currentRole === 'student' ? 'selected' : ''}>Aluno</option>
+                        <option value="teacher" ${currentRole === 'teacher' ? 'selected' : ''}>Professor</option>
+                        <option value="admin" ${currentRole === 'admin' ? 'selected' : ''}>Admin</option>
+                        <option value="superadmin" ${currentRole === 'superadmin' ? 'selected' : ''}>Super Admin</option>
                     </select>
                 </td>
                 <td style="padding: 10px; text-align: right;">
                     <button class="action-button secondary" onclick="window.AppHandlers.handleNavigateToProfile(${user.id})" style="padding: 4px 8px; font-size: 0.8rem;">Ver Perfil</button>
                 </td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
+
+        // --- PASSO CRUCIAL: Ativa os ouvintes após desenhar o HTML ---
+        attachSelectListeners();
 
     } catch (e) {
         console.error("Erro filtro:", e);
@@ -60,50 +117,30 @@ async function handleManagementFilterChange() {
     }
 }
 
-// 2. Função de Mudança de Cargo
-async function handleRoleChange(event, userId) {
-    const newRole = event.target.value;
-    
-    if(!confirm(`Tem certeza que deseja alterar o cargo deste usuário para "${newRole}"?`)) {
-        handleManagementFilterChange(); // Reseta a lista visualmente
-        return; 
-    }
-
-    try {
-        // Usa o apiCall importado no topo
-        const response = await apiCall('updateUserRole', { userId, newRole });
-        alert(response.message || 'Cargo atualizado com sucesso!');
-    } catch (error) {
-        console.error("Erro mudança cargo:", error);
-        alert('Erro ao atualizar cargo: ' + error.message);
-        handleManagementFilterChange(); // Recarrega lista
-    }
-}
-
-// 3. Função Auxiliar de Inicialização
+// 2. Inicialização (Loop de verificação)
 function initUserList() {
     const listBody = document.getElementById('user-list-body');
     if (listBody) {
-        // Chama a função interna diretamente (sem window.AppHandlers)
         handleManagementFilterChange();
     } else {
         setTimeout(initUserList, 100);
     }
 }
 
-
-// --- EXPORTAÇÃO PARA O ROTEADOR (View Principal) ---
+// --- RENDERIZAÇÃO PRINCIPAL ---
 
 export async function renderUserManagementView() {
-    // Busca cursos para o filtro
     let courses = [];
     try {
-        const courseData = await apiCall('getCourses', {}, 'GET');
-        courses = courseData.courses || [];
+        const response = await apiCall('getCourses', {}, 'GET');
+        courses = response.courses || [];
     } catch (e) {
         console.warn("Aviso: Não foi possível carregar cursos.", e);
     }
 
+    // HTML Estrutural
+    // Note que os selects de filtro no topo ainda usam window.AppHandlers pois são estáticos,
+    // mas a lista dinâmica de usuários agora é autônoma.
     const html = `
         <div class="view-header">
             <h2>Gerenciamento de Usuários</h2>
@@ -170,14 +207,13 @@ export async function renderUserManagementView() {
         </div>
     `;
 
-    // Inicia o loop de verificação para carregar a lista
     setTimeout(initUserList, 50);
-
     return html;
 }
 
-// --- REGISTRO GLOBAL DE HANDLERS (Crucial) ---
-// Isso garante que o HTML consiga chamar as funções via onclick/onchange
+// --- REGISTRO GLOBAL ---
+// Apenas handleManagementFilterChange precisa ser global para os filtros do topo.
+// A mudança de cargo agora é interna e não depende disso.
 window.AppHandlers = window.AppHandlers || {};
 window.AppHandlers.handleManagementFilterChange = handleManagementFilterChange;
-window.AppHandlers.handleRoleChange = handleRoleChange;
+// (handleRoleChange foi removido do global intencionalmente pois agora é interno)

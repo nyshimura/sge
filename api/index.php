@@ -29,7 +29,7 @@ $actionMap = [
     
     // User & Profile
     'getUserProfile' => __DIR__ . '/handlers/user_handlers.php',
-    'getProfileData' => __DIR__ . '/handlers/user_handlers.php', // Alias importante
+    'getProfileData' => __DIR__ . '/handlers/user_handlers.php',
     'updateUserProfile' => __DIR__ . '/handlers/user_handlers.php', 
     'uploadProfilePicture' => __DIR__ . '/handlers/user_handlers.php',
     'listUsers' => __DIR__ . '/handlers/user_handlers.php',
@@ -59,7 +59,7 @@ $actionMap = [
     'reopenCourse' => __DIR__ . '/handlers/course_handlers.php',
     'saveAttendance' => __DIR__ . '/handlers/course_handlers.php',
     'getAttendance' => __DIR__ . '/handlers/course_handlers.php',
-    'getAttendanceData' => __DIR__ . '/handlers/course_handlers.php', // <<< ADICIONADO AQUI
+    'getAttendanceData' => __DIR__ . '/handlers/course_handlers.php',
     
     // Enrollment
     'initiateEnrollment' => __DIR__ . '/handlers/enrollment_handlers.php',
@@ -74,14 +74,14 @@ $actionMap = [
     // Financial
     'generatePayment' => __DIR__ . '/handlers/financial_handlers.php',
     'getFinancialDashboard' => __DIR__ . '/handlers/financial_handlers.php',
-    'getFinancialDashboardData' => __DIR__ . '/handlers/financial_handlers.php', // Alias
+    'getFinancialDashboardData' => __DIR__ . '/handlers/financial_handlers.php',
     'getFinancialReport' => __DIR__ . '/handlers/financial_handlers.php',
     'getDefaulters' => __DIR__ . '/handlers/financial_handlers.php',
-    'getDefaultersReport' => __DIR__ . '/handlers/financial_handlers.php', // Alias
+    'getDefaultersReport' => __DIR__ . '/handlers/financial_handlers.php',
     'updatePaymentStatus' => __DIR__ . '/handlers/financial_handlers.php',
     'bulkUpdatePaymentStatus' => __DIR__ . '/handlers/financial_handlers.php',
     'getPaymentHistory' => __DIR__ . '/handlers/financial_handlers.php',
-    'getStudentPayments' => __DIR__ . '/handlers/financial_handlers.php', // Alias
+    'getStudentPayments' => __DIR__ . '/handlers/financial_handlers.php',
     'generateReceiptPdf' => __DIR__ . '/handlers/receipt_handler.php',
     
     // Certificates
@@ -89,7 +89,7 @@ $actionMap = [
     'viewCertificate' => __DIR__ . '/handlers/certificate_handler.php',
     'verifyCertificate' => __DIR__ . '/handlers/certificate_handler.php',
     'getMyCertificates' => __DIR__ . '/handlers/certificate_handler.php',
-    'getStudentCertificates' => __DIR__ . '/handlers/certificate_handler.php', // Alias
+    'getStudentCertificates' => __DIR__ . '/handlers/certificate_handler.php',
     
     // Contracts & Documents
     'generateContractPdf' => __DIR__ . '/handlers/contract_handler.php',
@@ -97,7 +97,7 @@ $actionMap = [
     
     // AI
     'generateDescriptionAI' => __DIR__ . '/handlers/ai_handlers.php',
-    'generateAiDescription' => __DIR__ . '/handlers/ai_handlers.php', // Alias
+    'generateAiDescription' => __DIR__ . '/handlers/ai_handlers.php',
 ];
 
 // 5. Controle de Acesso (Segurança)
@@ -123,7 +123,7 @@ if (array_key_exists($action, $actionMap)) {
         require_once $handlerFile;
         
         // --- MISTURA JSON COM $_REQUEST (CORREÇÃO DEFINITIVA) ---
-        // Isso resolve o problema de "campos obrigatórios" no login e outros POSTs
+        // Garante que dados enviados como JSON (axios/fetch) sejam lidos corretamente
         $params = $_REQUEST;
         $jsonInput = file_get_contents('php://input');
         $jsonData = json_decode($jsonInput, true);
@@ -133,8 +133,7 @@ if (array_key_exists($action, $actionMap)) {
         unset($params['action']); 
         // ------------------------------------------------------
         
-        // Converte nome da ação para nome da função
-        // Ex: updateUserProfile -> handle_update_user_profile
+        // Converte nome da ação para nome da função (snake_case)
         $functionNameSnake = 'handle_' . fromCamelCase($action);
         $functionNameExact = 'handle_' . $action;
         
@@ -143,13 +142,13 @@ if (array_key_exists($action, $actionMap)) {
         } elseif (function_exists($functionNameExact)) {
             $functionNameExact($conn, $params);
         } else {
-            send_response(false, ['message' => "Função handler '$functionNameSnake' (ou exata) não encontrada."], 500);
+            send_response(false, ['message' => "Função handler '$functionNameSnake' não encontrada."], 500);
         }
     } else {
         send_response(false, ['message' => "Arquivo handler não encontrado."], 500);
     }
 } else {
-    send_response(false, ['message' => 'Ação inválida ou não implementada: ' . htmlspecialchars($action)], 400);
+    send_response(false, ['message' => 'Ação inválida: ' . htmlspecialchars($action)], 400);
 }
 
 // --- Funções Auxiliares ---

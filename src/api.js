@@ -1,11 +1,8 @@
+// src/api.js
 const API_URL = 'api/index.php';
 
 /**
  * Realiza uma chamada para a API backend.
- * @param {string} action A ação a ser executada no backend.
- * @param {object} data Os dados a serem enviados.
- * @param {string} method O método HTTP a ser usado ('POST' ou 'GET').
- * @returns {Promise<any>} A resposta da API.
  */
 export async function apiCall(action, data = {}, method = 'POST') {
     try {
@@ -16,6 +13,7 @@ export async function apiCall(action, data = {}, method = 'POST') {
             },
         };
 
+        // Monta a URL base
         let url = `${API_URL}?action=${action}`;
 
         if (method === 'POST') {
@@ -27,31 +25,24 @@ export async function apiCall(action, data = {}, method = 'POST') {
         const response = await fetch(url, options);
 
         if (!response.ok) {
-            // Tenta obter uma mensagem de erro mais detalhada do corpo da resposta
+            // Tenta ler erro do backend se houver
             let errorText = await response.text();
             try {
-                // Tenta analisar como JSON, pois a API pode retornar { success: false, data: { message: '...' } }
-                const errorResult = JSON.parse(errorText);
-                if (errorResult && !errorResult.success && (errorResult.data?.message || errorResult.message)) {
-                    errorText = errorResult.data?.message || errorResult.message;
+                const jsonErr = JSON.parse(errorText);
+                if (jsonErr && (jsonErr.message || jsonErr.data?.message)) {
+                    errorText = jsonErr.data?.message || jsonErr.message;
                 }
-            } catch (jsonError) {
-                // Se não for JSON, usa o texto como está (pode ser erro de servidor HTML)
-            }
-            // Usa a mensagem extraída ou uma mensagem padrão
+            } catch(e) {}
             throw new Error(errorText || `HTTP error! status: ${response.status}`);
         }
 
         const result = await response.json();
         if (result.success === false) {
-            const errorMessage = result.data?.message || result.message || 'API call failed';
-            throw new Error(errorMessage);
+            throw new Error(result.data?.message || result.message || 'Erro na API');
         }
         return result.data;
     } catch (error) {
-        console.error(`API call failed for action "${action}":`, error);
-        // Remove o alert daqui
-        // alert(`Ocorreu um erro de comunicação com o servidor: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
-        throw error; // Relança o erro para ser tratado pela função que chamou apiCall
+        console.error(`Falha na API (${action}):`, error);
+        throw error;
     }
 }
