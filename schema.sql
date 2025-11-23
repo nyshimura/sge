@@ -1,5 +1,5 @@
--- SQL Schema for [Nome do Projeto - Ex: Sistema de Gestão Escolar]
--- Version: 1.1
+-- SQL Schema for SGE - Sistema de Gestão Escolar
+-- Version: 1.2 (Updated with phone column)
 -- Description: Creates the database structure with only the essential initial data.
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
@@ -12,7 +12,7 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `u821635548_sistema`
+-- Database: `banco_de_dados_sge`
 --
 
 -- --------------------------------------------------------
@@ -191,6 +191,7 @@ CREATE TABLE `users` (
   `firstName` varchar(100) NOT NULL,
   `lastName` varchar(100) DEFAULT NULL,
   `email` varchar(255) NOT NULL,
+  `phone` varchar(20) DEFAULT NULL COMMENT 'Telefone pessoal do aluno/usuario',
   `password_hash` varchar(255) NOT NULL,
   `reset_token` varchar(255) DEFAULT NULL,
   `reset_token_expires_at` datetime DEFAULT NULL,
@@ -214,8 +215,8 @@ CREATE TABLE `users` (
 -- Inserindo apenas o usuário superadmin inicial. Senha padrão é 'admin'
 --
 
-INSERT INTO `users` (`id`, `firstName`, `lastName`, `email`, `password_hash`, `reset_token`, `reset_token_expires_at`, `role`, `age`, `profilePicture`, `address`, `rg`, `cpf`, `birthDate`, `guardianName`, `guardianRG`, `guardianCPF`, `guardianEmail`, `guardianPhone`, `created_at`) VALUES
-(1, 'Super', 'Admin', 'admin@admin', '$2y$10$/J6yz5uYX5iITNf4PvjKruiKJuLPSdxyIhGKGbnXDa6qmhxk5WGea', NULL, NULL, 'superadmin', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2025-10-02 23:26:14');
+INSERT INTO `users` (`id`, `firstName`, `lastName`, `email`, `phone`, `password_hash`, `reset_token`, `reset_token_expires_at`, `role`, `age`, `profilePicture`, `address`, `rg`, `cpf`, `birthDate`, `guardianName`, `guardianRG`, `guardianCPF`, `guardianEmail`, `guardianPhone`, `created_at`) VALUES
+(1, 'Super', 'Admin', 'admin@admin', NULL, '$2y$10$/J6yz5uYX5iITNf4PvjKruiKJuLPSdxyIhGKGbnXDa6qmhxk5WGea', NULL, NULL, 'superadmin', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2025-10-02 23:26:14');
 
 --
 -- Índices para tabelas despejadas

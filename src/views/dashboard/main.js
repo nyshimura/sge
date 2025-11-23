@@ -7,82 +7,74 @@ import { renderTeacherView } from './teacher.js';
 
 /**
  * Função principal para renderizar o dashboard apropriado baseado na função do usuário.
- * Busca os dados necessários da API.
+ * Busca os dados necessários da API e distribui para as views.
  */
 export async function renderDashboard(appRoot) {
     const { currentUser } = appState;
 
     if (!currentUser) {
-        // Se por algum motivo o usuário não estiver logado, redireciona para login
         window.AppHandlers.navigateTo('login');
         return '<div class="loading-placeholder">Redirecionando...</div>';
     }
 
-    // Mostra loading enquanto busca dados
-    if (appRoot) appRoot.innerHTML = '<div class="loading-placeholder">Se ainda não carregou atualize a página!</div>';
+    if (appRoot) appRoot.innerHTML = '<div class="loading-placeholder">Carregando seu painel...</div>';
 
     try {
+        // 1. Busca dados do Backend
         const data = await apiCall('getDashboardData', { userId: currentUser.id, role: currentUser.role }, 'GET');
 
-        // --- Verificação Essencial ---
         if (!data || typeof data !== 'object') {
-            throw new Error("API getDashboardData retornou dados inválidos ou vazios.");
+            throw new Error("Dados inválidos recebidos do servidor.");
         }
-        // -----------------------------
 
-        // Atualiza o estado global com os dados recebidos, garantindo arrays vazios como fallback
+        // 2. Atualiza o estado global (CORREÇÃO AQUI)
+        // Adicionamos 'myEnrollments' e 'myCourses' que estavam faltando!
         appState.courses = data.courses || [];
-        appState.enrollments = data.enrollments || [];
-        appState.attendance = data.attendance || []; // Se attendance for necessário no dashboard
-        appState.payments = data.payments || []; // Se payments for necessário
-        appState.users = data.users || []; // Principalmente para admin
-        appState.teachers = data.teachers || []; // Para student/admin
+        appState.enrollments = data.enrollments || []; // Para Admin
+        appState.myEnrollments = data.myEnrollments || []; // <--- PARA ALUNO (Faltava isso)
+        appState.myCourses = data.myCourses || []; // <--- PARA PROFESSOR (Faltava isso)
+        
+        appState.attendance = data.attendance || []; 
+        appState.payments = data.payments || []; 
+        appState.users = data.users || []; 
+        appState.teachers = data.teachers || []; 
 
-        // Chama a função helper que decide qual view específica renderizar
-        const dashboardHtml = renderDashboardHelper(currentUser.id, currentUser.role, appState); // Passa o appState completo
+        // 3. Renderiza a view específica passando os dados completos
+        const dashboardHtml = renderDashboardHelper(currentUser.id, currentUser.role, appState); 
 
-        // --- Verificação Essencial ---
         if (typeof dashboardHtml !== 'string' || dashboardHtml.trim() === '') {
-            console.error("!!! renderDashboardHelper retornou HTML inválido ou vazio:", dashboardHtml); // Mantido: Erro importante
-            throw new Error("Falha ao gerar o conteúdo do dashboard para a função: " + currentUser.role);
+            console.error("Erro: View retornou vazio.", dashboardHtml);
+            throw new Error("Falha ao gerar visualização.");
         }
-        // -----------------------------
 
-        return dashboardHtml; // Retorna o HTML para o router inserir
+        return dashboardHtml; 
 
     } catch (error) {
-        console.error("!!! Erro ao carregar dados do dashboard:", error); // Mantido: Erro importante
-        // Retorna uma mensagem de erro para ser exibida pelo router
-        return `<div class="error-placeholder">Erro ao carregar dados do painel: ${error.message} <br> Verifique a consola para mais detalhes.</div>`;
+        console.error("Erro dashboard:", error);
+        return `<div class="error-placeholder">
+            <h3>Ops! Algo deu errado.</h3>
+            <p>${error.message}</p>
+            <button onclick="location.reload()">Tentar Novamente</button>
+        </div>`;
     }
 }
 
 /**
- * Função helper que escolhe a view específica do dashboard.
- * Recebe o appState completo como 'data' para passar às views filhas.
+ * Escolhe qual tela desenhar
  */
-function renderDashboardHelper(userId, role, data) { // 'data' aqui é o appState
+function renderDashboardHelper(userId, role, data) { 
     switch (role) {
         case 'admin':
         case 'superadmin':
-            // Verifica se renderAdminView retorna string
-            const adminHtml = renderAdminView(userId, data);
-            if (typeof adminHtml !== 'string') console.error("!!! renderAdminView NÃO retornou uma string!"); // Mantido: Erro importante
-            return adminHtml;
+            return renderAdminView(userId, data);
         case 'student':
-            // Verifica se renderStudentView retorna string
-            const studentHtml = renderStudentView(userId, data);
-            if (typeof studentHtml !== 'string') console.error("!!! renderStudentView NÃO retornou uma string!"); // Mantido: Erro importante
-            return studentHtml;
+            // Agora 'data' contém 'myEnrollments' corretamente!
+            return renderStudentView(userId, data);
         case 'teacher':
-            // Verifica se renderTeacherView retorna string
-            const teacherHtml = renderTeacherView(userId, data);
-            if (typeof teacherHtml !== 'string') console.error("!!! renderTeacherView NÃO retornou uma string!"); // Mantido: Erro importante
-            return teacherHtml;
+            return renderTeacherView(userId, data);
         case 'unassigned':
-            return '<div class="card"><h3 class="card-title">Acesso Pendente</h3><p>Sua conta ainda não foi atribuída a uma função (Aluno, Professor, Admin). Por favor, aguarde a administração liberar seu acesso.</p></div>';
+            return '<div class="card"><h3 class="card-title">Acesso Pendente</h3><p>Aguarde a liberação do seu acesso pela secretaria.</p></div>';
         default:
-            console.error("Função de usuário desconhecida encontrada:", role); // Mantido: Erro importante
-            return '<div class="card"><p>Erro: Função de usuário desconhecida. Contate o suporte.</p></div>';
+            return '<div class="card"><p>Erro: Perfil de usuário desconhecido.</p></div>';
     }
 }

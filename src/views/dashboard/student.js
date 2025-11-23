@@ -6,33 +6,23 @@ export function renderStudentView(studentId, data) {
   const student = appState.currentUser;
   if (!student) return '';
 
-  const myEnrollments = data.enrollments || [];
+  console.log(">>> DEBUG STUDENT VIEW - Dados Recebidos:", data);
+
+  const myEnrollments = data.myEnrollments || data.enrollments || [];
   const myAttendance = data.attendance || [];
   const allCourses = data.courses || [];
-  const teachers = data.teachers || [];
+  
+  // --- LÓGICA DE FILTROS ---
 
-  // --- INÍCIO DA MODIFICAÇÃO ---
-
-  // 1. Identificar IDs dos cursos onde a matrícula é APROVADA.
-  const approvedCourseIds = myEnrollments
-    .filter(e => e.status === 'Aprovada')
-    .map(e => e.courseId);
-
-  // 2. Filtrar a lista de Cursos Disponíveis:
-  const availableCoursesToDisplay = allCourses.filter(course =>
-    // a) O curso deve estar Aberto
-    course.status === 'Aberto' &&
-    // b) O aluno NÃO pode ter uma matrícula APROVADA neste curso
-    !approvedCourseIds.includes(course.id)
-  );
-
-  // --- FIM DA MODIFICAÇÃO ---
-
-  // *** ALTERAÇÃO AQUI ***
-  // 1. Filtramos a lista de matrículas ANTES de renderizar.
-  // Queremos apenas as que estão 'Aprovada' ou 'Pendente'.
   const activeEnrollments = myEnrollments.filter(
     (e) => e.status === 'Aprovada' || e.status === 'Pendente'
+  );
+
+  const idsToHide = activeEnrollments.map(e => String(e.courseId));
+
+  const availableCoursesToDisplay = allCourses.filter(course =>
+    course.status === 'Aberto' &&
+    !idsToHide.includes(String(course.id))
   );
 
   const cards = [
@@ -44,28 +34,27 @@ export function renderStudentView(studentId, data) {
             <div class="list-wrapper">
                 <ul class="list">
                     ${activeEnrollments.length === 0 ? '<li>Nenhuma matrícula ativa encontrada.</li>' : activeEnrollments.map((enrollment) => {
-                        // 2. Agora o .map() usa a lista filtrada "activeEnrollments"
-                        const course = allCourses.find((c) => c.id === enrollment.courseId);
-                        if (!course) return '<li>Curso não encontrado (ID: ' + enrollment.courseId + ')</li>';
+                        const course = allCourses.find((c) => String(c.id) === String(enrollment.courseId));
+                        
+                        if (!course) return `<li class="list-item error">Curso ID ${enrollment.courseId} não encontrado.</li>`;
 
-                        const teacher = teachers.find((t) => t.id === course.teacherId);
+                        const teacherName = course.teacherFirstName 
+                            ? `${course.teacherFirstName} ${course.teacherLastName || ''}`
+                            : 'Professor não definido';
 
-                        // 3. Os botões de ação foram simplificados.
-                        // Deixamos APENAS o botão "Detalhes".
-                        let actionButtons = `<button class="action-button secondary" onclick="window.AppHandlers.handleNavigateToCourseDetails(${course.id})">Detalhes</button>`;
-
-                        // 4. REMOVEMOS os blocos 'if (enrollment.status === 'Aprovada')' 
-                        // e 'else if (enrollment.status === 'Cancelada')' que adicionavam outros botões.
+                        // --- CORREÇÃO DE CORES AQUI ---
+                        // As classes do CSS são 'status-aprovada' (verde) e 'status-pendente' (amarelo)
+                        const badgeClass = enrollment.status === 'Aprovada' ? 'status-aprovada' : 'status-pendente';
 
                         return `
                             <li class="list-item">
                                 <div class="list-item-content">
                                     <span class="list-item-title">${course.name}</span>
-                                    <span class="list-item-subtitle">Professor: ${teacher?.firstName || ''} ${teacher?.lastName || ''}</span>
+                                    <span class="list-item-subtitle">Professor: ${teacherName}</span>
                                 </div>
                                 <div class="list-item-actions">
-                                    <span class="status-badge status-${enrollment.status.toLowerCase()}">${enrollment.status}</span>
-                                    ${actionButtons}
+                                    <span class="status-badge ${badgeClass}">${enrollment.status}</span>
+                                    <button class="action-button secondary" onclick="window.AppHandlers.handleNavigateToCourseDetails(${course.id})">Detalhes</button>
                                 </div>
                             </li>
                         `;
@@ -75,45 +64,40 @@ export function renderStudentView(studentId, data) {
         </div>
       `
     },
-      {
+    {
       id: 'student-available-courses',
       html: `
         <div class="card" id="student-available-courses" draggable="true" ondragstart="window.AppHandlers.handleDragStart(event)" ondragend="window.AppHandlers.handleDragEnd(event)">
             <h3 class="card-title">🏫 Cursos Disponíveis para Inscrição</h3>
              <div class="list-wrapper">
                 <ul class="list">
-                    ${availableCoursesToDisplay.map((course) => { // <-- USANDO A LISTA JÁ FILTRADA
-                        // Verifica se existe matrícula ATIVA (Pendente ou Aprovada)
-                        const hasActiveEnrollment = myEnrollments.some((e) => e.courseId === course.id && (e.status === 'Aprovada' || e.status === 'Pendente'));
-                        // Verifica se existe matrícula CANCELADA
-                        const wasCancelled = myEnrollments.some((e) => e.courseId === course.id && e.status === 'Cancelada');
+                    ${availableCoursesToDisplay.length === 0 ? '<li>🎉 Não há novos cursos disponíveis no momento.</li>' : availableCoursesToDisplay.map((course) => {
+                        const teacherName = course.teacherFirstName 
+                            ? `${course.teacherFirstName} ${course.teacherLastName || ''}`
+                            : 'A definir';
 
-                        const teacher = teachers.find((t) => t.id === course.teacherId);
-                        let actionHtml = '';
-
-                        // A lógica abaixo agora só precisa checar Pendente ou Cancelada, já que Aprovada foi filtrado antes.
-                        if (hasActiveEnrollment) {
-                             const currentStatus = myEnrollments.find(e => e.courseId === course.id)?.status;
-                             actionHtml = `<span class="status-badge status-${currentStatus.toLowerCase()}">Matriculado</span>`;
-                        } else if (wasCancelled) {
-                            actionHtml = `<button class="action-button" data-course-id="${course.id}" onclick="window.AppHandlers.handleInitiateEnrollment(${course.id})">Reinscrever-se</button>`;
+                        const wasCancelled = myEnrollments.some((e) => String(e.courseId) === String(course.id) && e.status === 'Cancelada');
+                        
+                        let actionButton = '';
+                        if (wasCancelled) {
+                             actionButton = `<button class="action-button" onclick="window.AppHandlers.handleInitiateEnrollment(${course.id})">Reinscrever-se</button>`;
                         } else {
-                            actionHtml = `<button class="action-button" data-course-id="${course.id}" onclick="window.AppHandlers.handleInitiateEnrollment(${course.id})">Inscreva-se Agora</button>`;
+                             actionButton = `<button class="action-button" onclick="window.AppHandlers.handleInitiateEnrollment(${course.id})">Inscreva-se Agora</button>`;
                         }
 
                         return `
                             <li class="list-item">
                                 <div class="list-item-content">
                                     <span class="list-item-title">${course.name}</span>
-                                    <span class="list-item-subtitle">Professor: ${teacher?.firstName || ''} ${teacher?.lastName || ''}</span>
+                                    <span class="list-item-subtitle">Prof.: ${teacherName} | Vagas: ${course.totalSlots || 'Ilimitadas'}</span>
                                 </div>
                                 <div class="list-item-actions">
                                     <button class="action-button secondary" onclick="window.AppHandlers.handleNavigateToCourseDetails(${course.id})">Detalhes</button>
-                                    ${actionHtml}
+                                    ${actionButton}
                                 </div>
                             </li>
                         `;
-                    }).join('') || '<li>🎉 Parabéns! Você já está matriculado(a) em todos os cursos abertos. 🎉</li>'}
+                    }).join('')}
                 </ul>
             </div>
         </div>
@@ -124,20 +108,27 @@ export function renderStudentView(studentId, data) {
       html: `
         <div class="card" id="student-attendance" draggable="true" ondragstart="window.AppHandlers.handleDragStart(event)" ondragend="window.AppHandlers.handleDragEnd(event)">
             <h3 class="card-title">📊 Meu Relatório de Frequência</h3>
-             ${myAttendance.length === 0 ? '<p>Nenhum registro de frequência ainda.</p>' : `
+             ${myAttendance.length === 0 ? '<p style="padding:10px; color:var(--text-muted);">Nenhuma presença registrada ainda.</p>' : `
                 <div class="table-wrapper">
-                <table>
+                <table class="table">
                     <thead><tr><th>Curso</th><th>Data</th><th>Status</th></tr></thead>
                     <tbody>
                         ${myAttendance.sort((a, b) => b.date.localeCompare(a.date)).map((record) => {
-                            const course = allCourses.find((c) => c.id === record.courseId);
-                            const dateObj = new Date(record.date + 'T00:00:00Z'); // Usa UTC para evitar problemas de fuso
-                            const formattedDate = dateObj.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+                            const course = allCourses.find((c) => String(c.id) === String(record.courseId));
+                            
+                            let formattedDate = record.date;
+                            try {
+                                const dateParts = record.date.split('-');
+                                if(dateParts.length === 3) formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+                            } catch (e) {}
+
+                            const statusClass = record.status === 'Presente' ? 'status-aprovada' : 'status-falta';
+                            
                             return `
                                 <tr>
-                                    <td>${course?.name || 'Curso não encontrado'}</td>
+                                    <td>${course ? course.name : `ID: ${record.courseId}`}</td>
                                     <td>${formattedDate}</td>
-                                    <td><span class="status-badge status-${record.status.toLowerCase()}">${record.status}</span></td>
+                                    <td><span class="status-badge ${statusClass}">${record.status}</span></td>
                                 </tr>
                             `
                         }).join('')}
@@ -161,7 +152,7 @@ export function renderStudentView(studentId, data) {
   return `
     <div class="welcome-message">
         <h2>Olá, ${student.firstName}!</h2>
-        <p>Veja os cursos disponíveis, o status da sua matrícula e seu histórico.</p>
+        <p>Bem-vindo ao seu portal do aluno.</p>
     </div>
     <div class="dashboard-grid" ondragover="window.AppHandlers.handleDragOver(event)" ondrop="window.AppHandlers.handleDrop(event)">
         ${cards.map(c => c.html).join('')}

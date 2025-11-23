@@ -181,7 +181,7 @@ function handle_generate_contract_pdf($conn, $data) {
                     $tmp_files[] = $tmp_sig_path; 
                     $sig_width=40; $sig_height=20; 
                     $sig_x=$line_start_contratado+($line_width/2)-($sig_width/2); 
-                    $sig_y=$line_y-$sig_height-2; 
+                    $sig_y=$line_y-$sig_height-0; 
                     $pdf->Image($tmp_sig_path, $sig_x, $sig_y, $sig_width, $sig_height);
                 }
              }
