@@ -34,12 +34,10 @@ function handle_get_dashboard_data($conn, $data) {
             // Pagamentos recentes (últimos 10)
             $response['payments'] = $conn->query("SELECT p.*, u.firstName, u.lastName, c.name as courseName FROM payments p JOIN users u ON p.studentId = u.id JOIN courses c ON p.courseId = c.id ORDER BY p.created_at DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
         } else if ($role === 'teacher') {
-            // Dados específicos do professor
             $stmt = $conn->prepare("SELECT * FROM courses WHERE teacherId = ?");
             $stmt->execute([$userId]);
             $response['myCourses'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
         } else if ($role === 'student') {
-            // Dados específicos do aluno
             $stmt = $conn->prepare("SELECT e.*, c.name as courseName, c.dayOfWeek, c.startTime, c.endTime FROM enrollments e JOIN courses c ON e.courseId = c.id WHERE e.studentId = ?");
             $stmt->execute([$userId]);
             $response['myEnrollments'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -54,29 +52,44 @@ function handle_get_dashboard_data($conn, $data) {
 }
 
 /**
- * Busca usuários com filtros (para gestão de usuários)
+ * Busca usuários com filtros
  */
 function handle_get_filtered_users($conn, $data) {
     $roleFilter = $data['role'] ?? '';
     $search = $data['search'] ?? '';
+    $courseId = isset($data['courseId']) ? filter_var($data['courseId'], FILTER_VALIDATE_INT) : 0;
 
-    $sql = "SELECT id, firstName, lastName, email, role, birthDate, created_at FROM users WHERE 1=1";
+    // Inicia query com DISTINCT para evitar duplicatas se aluno tiver +1 matrícula
+    $sql = "SELECT DISTINCT u.id, u.firstName, u.lastName, u.email, u.role, u.birthDate, u.created_at 
+            FROM users u ";
+    
+    // Join com matrículas se filtrar por curso
+    if ($courseId > 0) {
+        $sql .= " JOIN enrollments e ON u.id = e.studentId ";
+    }
+
+    $sql .= " WHERE 1=1";
     $params = [];
 
-    if ($roleFilter) {
-        $sql .= " AND role = ?";
+    if (!empty($roleFilter) && $roleFilter !== 'all') {
+        $sql .= " AND u.role = ?";
         $params[] = $roleFilter;
     }
 
-    if ($search) {
-        $sql .= " AND (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?)";
+    if ($courseId > 0) {
+        $sql .= " AND e.courseId = ?";
+        $params[] = $courseId;
+    }
+
+    if (!empty($search)) {
+        $sql .= " AND (u.firstName LIKE ? OR u.lastName LIKE ? OR u.email LIKE ?)";
         $searchTerm = "%$search%";
         $params[] = $searchTerm;
         $params[] = $searchTerm;
         $params[] = $searchTerm;
     }
 
-    $sql .= " ORDER BY firstName ASC";
+    $sql .= " ORDER BY u.firstName ASC";
 
     try {
         $stmt = $conn->prepare($sql);
@@ -96,13 +109,11 @@ function handle_update_user_role($conn, $data) {
     $userId = $data['userId'] ?? 0;
     $newRole = $data['newRole'] ?? '';
 
-    if ($userId <= 0) {
-        send_response(false, ['message' => 'ID de usuário inválido.'], 400);
-        return;
-    }
+    if ($userId <= 0) { send_response(false, ['message' => 'ID inválido.'], 400); return; }
+    
     $allowedRoles = ['student', 'teacher', 'admin', 'superadmin'];
     if (!in_array($newRole, $allowedRoles)) {
-        send_response(false, ['message' => 'Cargo inválido selecionado.'], 400);
+        send_response(false, ['message' => 'Cargo inválido.'], 400);
         return;
     }
 
@@ -112,18 +123,18 @@ function handle_update_user_role($conn, $data) {
         $success = $stmt->execute([$newRole, $userId]);
 
         if ($success) {
-            send_response(true, ['message' => 'Cargo do usuário atualizado com sucesso.']);
+            send_response(true, ['message' => 'Cargo atualizado com sucesso.']);
         } else {
-            send_response(false, ['message' => 'Erro ao atualizar cargo no banco.'], 500);
+            send_response(false, ['message' => 'Erro ao atualizar cargo.'], 500);
         }
     } catch (PDOException $e) {
-        error_log("Erro em handle_update_user_role: " . $e->getMessage());
-        send_response(false, ['message' => 'Erro ao atualizar cargo: ' . $e->getMessage()], 500);
+        error_log("Erro handle_update_user_role: " . $e->getMessage());
+        send_response(false, ['message' => 'Erro BD: ' . $e->getMessage()], 500);
     }
 }
 
 /**
- * Busca lista de professores (para selects em cursos)
+ * Busca lista de professores
  */
 function handle_get_teachers($conn, $data) {
     try {
@@ -138,7 +149,7 @@ function handle_get_teachers($conn, $data) {
 }
 
 /**
- * Busca lista de alunos ativos (para selects diversos)
+ * Busca lista de alunos ativos
  */
 function handle_get_active_students($conn, $data) {
     try {
@@ -152,56 +163,77 @@ function handle_get_active_students($conn, $data) {
     }
 }
 
+
 // ============================================================================
-// <<< FUNÇÕES DE PERFIL (NOVAS) >>>
+// <<< FUNÇÕES DE PERFIL (CORRIGIDAS PARA TRAZER MATRÍCULAS) >>>
 // ============================================================================
 
 /**
  * Busca dados do perfil (Ação: getProfileData)
  */
 function handle_get_profile_data($conn, $data) {
-    // Tenta pegar ID de 'userId' (como o frontend envia) ou 'id' (padrão)
     $userId = 0;
-    if (isset($data['userId'])) {
-        $userId = filter_var($data['userId'], FILTER_VALIDATE_INT);
-    } elseif (isset($data['id'])) {
-        $userId = filter_var($data['id'], FILTER_VALIDATE_INT);
-    }
+    if (isset($data['userId'])) $userId = filter_var($data['userId'], FILTER_VALIDATE_INT);
+    elseif (isset($data['id'])) $userId = filter_var($data['id'], FILTER_VALIDATE_INT);
     
-    // Se não veio ID, tenta pegar da sessão (usuário vendo o próprio perfil)
     if ($userId <= 0) {
         if (session_status() == PHP_SESSION_NONE) session_start();
         $userId = $_SESSION['user_id'] ?? 0;
     }
 
-    if ($userId <= 0) { 
-        send_response(false, ['message' => 'ID de usuário inválido.'], 400); 
-        return; 
-    }
+    if ($userId <= 0) { send_response(false, ['message' => 'ID inválido.'], 400); return; }
     
     try {
-        // Inclui 'profilePicture' no SELECT e o novo campo 'phone'
+        // 1. Dados do Usuário (Incluindo coluna 'phone' que adicionamos)
         $stmt = $conn->prepare("SELECT id, firstName, lastName, email, role, profilePicture, address, rg, cpf, phone, birthDate, guardianName, guardianEmail, guardianPhone, guardianRG, guardianCPF FROM users WHERE id = ?");
         $stmt->execute([$userId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($user) {
-            send_response(true, ['user' => $user]);
+            // 2. BUSCA MATRÍCULAS (Isso estava faltando!)
+            // Traz dados vitais: customMonthlyFee, scholarshipPercentage, courseName
+            $stmtEnroll = $conn->prepare("
+                SELECT e.*, c.name as courseName 
+                FROM enrollments e 
+                JOIN courses c ON e.courseId = c.id 
+                WHERE e.studentId = ?
+            ");
+            $stmtEnroll->execute([$userId]);
+            $enrollments = $stmtEnroll->fetchAll(PDO::FETCH_ASSOC);
+
+            // 3. BUSCA PAGAMENTOS (Para o histórico financeiro)
+            $stmtPay = $conn->prepare("
+                SELECT p.*, c.name as courseName 
+                FROM payments p 
+                JOIN courses c ON p.courseId = c.id 
+                WHERE p.studentId = ? 
+                ORDER BY p.dueDate DESC
+            ");
+            $stmtPay->execute([$userId]);
+            $payments = $stmtPay->fetchAll(PDO::FETCH_ASSOC);
+
+            // Retorna o pacote completo
+            send_response(true, [
+                'user' => $user,
+                'enrollments' => $enrollments,
+                'payments' => $payments
+            ]);
         } else {
             send_response(false, ['message' => 'Usuário não encontrado.'], 404);
         }
     } catch (PDOException $e) {
         error_log("Erro handle_get_profile_data: " . $e->getMessage());
-        send_response(false, ['message' => 'Erro ao buscar dados do perfil.'], 500);
+        send_response(false, ['message' => 'Erro ao buscar perfil.'], 500);
     }
 }
 
-// Aliases para garantir compatibilidade de nomes
+// Aliases
 function handle_get_user_profile($conn, $data) { handle_get_profile_data($conn, $data); }
+function handle_getUserProfile($conn, $data) { handle_get_profile_data($conn, $data); }
+
 
 /**
  * Atualiza o perfil do usuário (Ação: updateUserProfile)
- * Suporta upload de imagem em Base64
  */
 function handle_update_user_profile($conn, $data) {
     $userId = isset($data['id']) ? filter_var($data['id'], FILTER_VALIDATE_INT) : 0;
@@ -210,13 +242,9 @@ function handle_update_user_profile($conn, $data) {
     $currentUserId = $_SESSION['user_id'] ?? 0;
     $currentUserRole = $_SESSION['role'] ?? '';
 
-    // Se não veio ID, assume o logado
     if ($userId <= 0) $userId = $currentUserId;
 
-    if ($userId <= 0) {
-        send_response(false, ['message' => 'ID inválido.'], 400);
-        return;
-    }
+    if ($userId <= 0) { send_response(false, ['message' => 'ID inválido.'], 400); return; }
 
     // Permissão
     if ($userId != $currentUserId && $currentUserRole !== 'admin' && $currentUserRole !== 'superadmin') {
@@ -224,7 +252,7 @@ function handle_update_user_profile($conn, $data) {
         return;
     }
 
-    // Captura campos
+    // Campos
     $firstName = isset($data['firstName']) ? trim($data['firstName']) : null;
     $lastName = isset($data['lastName']) ? trim($data['lastName']) : null;
     $email = isset($data['email']) ? trim($data['email']) : null;
@@ -289,4 +317,7 @@ function handle_update_user_profile($conn, $data) {
         send_response(false, ['message' => 'Erro BD ao atualizar.'], 500);
     }
 }
+
+// Alias
+function handle_updateUserProfile($conn, $data) { handle_update_user_profile($conn, $data); }
 ?>
