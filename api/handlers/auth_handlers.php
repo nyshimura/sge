@@ -232,7 +232,12 @@ function handle_request_password_reset($conn, $params) {
 
              if ($stmtUpdate->execute()) {
                  
-                 // Esta função agora está disponível globalmente graças à correção no index.php
+                 // --- CORREÇÃO: Carrega system_handlers.php se necessário ---
+                 if (!function_exists('get_system_settings')) {
+                    require_once __DIR__ . '/system_handlers.php';
+                 }
+                 // -----------------------------------------------------------
+
                  $settings = get_system_settings($conn); // Busca URL do site das configurações
                  
                  $siteUrl = $settings['site_url'] ?? 'http://localhost/seu_projeto/';

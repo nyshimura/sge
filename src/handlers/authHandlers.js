@@ -150,3 +150,53 @@ export async function handleResetPassword(event) {
     }
   }
 }
+
+// --- Handler para Alteração de Senha (Logado) ---
+export async function handleChangePassword(event) {
+    event.preventDefault(); // ESSENCIAL: Evita recarregar a página
+    const form = event.target;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const errorElement = document.getElementById('change-password-error');
+    
+    if (errorElement) errorElement.textContent = '';
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Salvando...';
+    }
+
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    // Validação de confirmação
+    if (data.newPassword !== data.confirmPassword) {
+        if (errorElement) errorElement.textContent = 'As novas senhas não coincidem.';
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Alterar Senha';
+        }
+        return;
+    }
+
+    try {
+        const response = await apiCall('changePassword', data);
+        alert(response.message || 'Senha alterada com sucesso!');
+        form.reset();
+    } catch (error) {
+        console.error(error);
+        if (errorElement) errorElement.textContent = error.message || 'Erro ao alterar senha.';
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Alterar Senha';
+        }
+    }
+}
+
+// --- REGISTRO GLOBAL ---
+window.AppHandlers = window.AppHandlers || {};
+window.AppHandlers.handleLogin = handleLogin;
+window.AppHandlers.handleRegister = handleRegister;
+window.AppHandlers.handleLogout = handleLogout;
+window.AppHandlers.handleForgotPasswordRequest = handleForgotPasswordRequest;
+window.AppHandlers.handleResetPassword = handleResetPassword;
+window.AppHandlers.handleChangePassword = handleChangePassword;

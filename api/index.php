@@ -26,6 +26,7 @@ $actionMap = [
     'logout' => __DIR__ . '/handlers/auth_handlers.php',
     'requestPasswordReset' => __DIR__ . '/handlers/auth_handlers.php',
     'resetPassword' => __DIR__ . '/handlers/auth_handlers.php',
+    'changePassword' => __DIR__ . '/handlers/auth_handlers.php', // <--- Rota Essencial
     
     // User & Profile
     'getUserProfile' => __DIR__ . '/handlers/user_handlers.php',
