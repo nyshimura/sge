@@ -9,6 +9,7 @@
   --table-header-bg: #f9fafb;
   --subtle-bg: #f8f9fa;
   --link-color: #007bff;
+  --highlight-bg: #d1d5db;
 
   /* Cores de Ação */
   --primary-color: #007bff;
@@ -52,6 +53,7 @@
     --table-header-bg: #2a2a2a;
     --subtle-bg: #252525;
     --link-color: #64b5f6;
+    --highlight-bg: #3a3a3a;
 
     /* Cores de Ação (Ajustadas para melhor contraste) */
     --primary-color: #0d6efd;
@@ -744,19 +746,22 @@ th {
     transition: background-color 0.2s;
 }
 .finance-student-list .list-item.clickable:hover {
-    background-color: #2a2a2a;
+    background-color: var(--highlight-bg); /* Agora muda automático */
+    transition: background-color 0.2s;
 }
 
 .expand-icon {
     font-size: 1.2rem;
     font-weight: bold;
+    color: var(--primary-color); /* Sugestão: usar a cor primária no ícone */
 }
 
 .student-payment-details {
     padding: 1rem;
-    background-color: #2a2a2a;
+    background-color: var(--highlight-bg); /* Fundo dos detalhes segue o tema */
     border-top: 1px solid var(--border-color);
     animation: fade-in 0.3s ease;
+    color: var(--text-color); /* Garante que o texto fique legível */
 }
 .student-payment-details h4 {
     margin-bottom: 1rem;
