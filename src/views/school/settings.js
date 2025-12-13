@@ -28,6 +28,16 @@ export async function renderSystemSettingsView() {
 
         <form id="system-settings-form" onsubmit="window.AppHandlers.handleUpdateSystemSettings(event)">
             ${hiddenTemplateFields}
+            
+            <div class="card full-width">
+                 <h3 class="card-title">Modelos de Documentos e Certificados</h3>
+                 <p>Gerencie os textos e layouts dos documentos gerados pelo sistema.</p>
+                 <div class="list-item-actions" style="justify-content: flex-start;">
+                    <button type="button" class="action-button" onclick="window.AppHandlers.handleNavigateToDocumentTemplates()">Gerir Contrato/Termos</button>
+                    <button type="button" class="action-button" onclick="window.AppHandlers.handleNavigateToCertificateTemplate()">Gerir Certificado</button>
+                 </div>
+            </div>
+            
             <div class="settings-grid">
                 
                 <div class="settings-column">
