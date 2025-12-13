@@ -78,6 +78,13 @@ Siga os passos abaixo para configurar o ambiente de desenvolvimento local (basea
 5.  **Executar:**
     * Acesse `http://localhost/sge` em seu navegador.
 
+## ⏰ Automação e Cron Jobs (Cobrança)
+
+Este sistema possui um módulo de **Automação de Cobrança** que envia e-mails com lembretes de vencimento e QR Code PIX.
+
+### 1. Configuração do Script
+O script responsável está em: `public_html/sge/api/cron/send_reminders.php`.
+Ele deve ser executado **uma vez ao dia** `0 8 * * *`.
 
 ---
 
