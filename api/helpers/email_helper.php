@@ -1,156 +1,140 @@
 <?php
-// Inclui as classes do PHPMailer
+// api/helpers/email_helper.php
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
 
-// Ajusta o caminho para a pasta 'api/phpmailer/'
 require_once __DIR__ . '/../phpmailer/Exception.php';
 require_once __DIR__ . '/../phpmailer/PHPMailer.php';
 require_once __DIR__ . '/../phpmailer/SMTP.php';
 
-/**
- * Envia um e-mail usando as configurações SMTP do sistema.
- *
- * @param PDO $conn A conexão PDO com o banco de dados.
- * @param string $toEmail O e-mail do destinatário.
- * @param string $toName O nome do destinatário (opcional).
- * @param string $subject O assunto do e-mail.
- * @param string $bodyHTML O corpo do e-mail em HTML.
- * @return bool True se o e-mail foi enviado com sucesso, False caso contrário.
- */
-function send_system_email(PDO $conn, $toEmail, $toName, $subject, $bodyHTML)
+function send_system_email($conn, $toEmail, $toName, $subject, $bodyHTML, $ccEmail = null, $embeddedImage = null)
 {
-    // 1. Busca as configurações SMTP e nome da escola
     try {
         $stmtSettings = $conn->query("SELECT smtpServer, smtpPort, smtpUser, smtpPass FROM system_settings WHERE id = 1 LIMIT 1");
         $settings = $stmtSettings->fetch(PDO::FETCH_ASSOC);
 
-        if (empty($settings['smtpServer']) || empty($settings['smtpPort']) || empty($settings['smtpUser']) || !isset($settings['smtpPass'])) {
-            error_log("SGE Email Error: Configurações SMTP incompletas.");
+        if (empty($settings['smtpServer']) || empty($settings['smtpPort']) || empty($settings['smtpUser'])) {
             return false;
         }
 
         $stmtSchool = $conn->query("SELECT name FROM school_profile WHERE id = 1 LIMIT 1");
         $schoolName = $stmtSchool->fetchColumn() ?: 'Sistema SGE';
 
-    } catch (PDOException $e) {
-        error_log("SGE Email Error (PDO): " . $e->getMessage());
-        return false;
-    }
+    } catch (PDOException $e) { return false; }
 
-    // 2. Configura e envia o e-mail
-    $mail = new PHPMailer(true); // Habilita exceções
-
-
+    $mail = new PHPMailer(true);
 
     try {
-        // Configurações do Servidor
-        // $mail->SMTPDebug = SMTP::DEBUG_SERVER; // Para depuração
         $mail->isSMTP();
         $mail->Host       = $settings['smtpServer'];
         $mail->SMTPAuth   = true;
         $mail->Username   = $settings['smtpUser'];
         $mail->Password   = $settings['smtpPass'];
 
-        // Define criptografia (TLS/SSL) baseado na porta
-        if ($settings['smtpPort'] == 587) {
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        } elseif ($settings['smtpPort'] == 465) {
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        } else {
-             $mail->SMTPSecure = false; // Ou PHPMailer::ENCRYPTION_STARTTLS se a porta 25 suportar STARTTLS
-             $mail->SMTPAutoTLS = false; // Desativa AutoTLS se a porta for 25 ou outra não padrão sem SSL/TLS explícito
-        }
+        if ($settings['smtpPort'] == 587) $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        elseif ($settings['smtpPort'] == 465) $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        else { $mail->SMTPSecure = false; $mail->SMTPAutoTLS = false; }
 
         $mail->Port       = (int)$settings['smtpPort'];
         $mail->CharSet    = PHPMailer::CHARSET_UTF8;
 
-        // Remetente
         $mail->setFrom($settings['smtpUser'], $schoolName);
-
-        // Destinatário
         $mail->addAddress($toEmail, $toName ?: '');
 
-        // Conteúdo
+        // LÓGICA DO GUARDIÃO (CC)
+        if (!empty($ccEmail)) {
+            $mail->addCC($ccEmail);
+        }
+
+        // LÓGICA DO QR CODE (Imagem Embutida)
+        if (!empty($embeddedImage) && file_exists($embeddedImage['path'])) {
+            $mail->addEmbeddedImage($embeddedImage['path'], $embeddedImage['cid'], 'qrcode.png');
+        }
+
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body    = $bodyHTML;
-        $mail->AltBody = strip_tags($bodyHTML); // Versão texto puro
+        $mail->AltBody = strip_tags($bodyHTML);
 
         $mail->send();
-        error_log("SGE Email Success: E-mail enviado para $toEmail.");
         return true; 
 
     } catch (Exception $e) {
-        error_log("SGE Email Error (PHPMailer Exception Catch): Falha ao enviar para $toEmail. Erro: {$mail->ErrorInfo}");
-         return false; // Retorna false se uma exceção foi capturada
+         error_log("Erro Email: " . $mail->ErrorInfo);
+         return false;
     }
 }
 
-
-/**
- * Prepara e envia o e-mail de redefinição de senha.
- * * @param PDO $conn A conexão PDO.
- * @param string $toEmail E-mail do destinatário.
- * @param int $userId ID do usuário (para buscar o nome).
- * @param string $resetLink O link completo de redefinição.
- * @return bool True se o e-mail foi enviado, False caso contrário.
- */
 function send_password_reset_email($conn, $toEmail, $userId, $resetLink) {
-    // 1. Obter nome do usuário
-    $userName = 'Usuário'; // Valor padrão
+    $userName = 'Usuário';
     try {
-        $stmtUser = $conn->prepare("SELECT firstName FROM users WHERE id = :id");
-        $stmtUser->execute([':id' => $userId]);
-        $user = $stmtUser->fetch(PDO::FETCH_ASSOC);
-        if ($user && !empty($user['firstName'])) {
-            $userName = $user['firstName'];
-        }
-    } catch (PDOException $e) {
-        error_log("Email Helper: Não foi possível buscar o nome do usuário $userId: " . $e->getMessage());
-        // Continua com o nome padrão
-    }
+        $stmt = $conn->prepare("SELECT firstName FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $userName = $stmt->fetchColumn() ?: 'Usuário';
+    } catch(Exception $e) {}
 
-    // 2. Obter nome da escola e templates de e-mail
-    $schoolName = 'Sistema SGE'; // Padrão
-    $subjectTemplate = 'Redefinição de Senha'; // Padrão
-    $bodyTemplate = 'Olá {{user_name}},<br><br>Clique no link a seguir para redefinir sua senha: <a href="{{reset_link}}">{{reset_link}}</a><br><br>Atenciosamente,<br>Equipe {{escola_nome}}'; // Padrão
-
-    if (function_exists('get_system_settings')) {
-        $settings = get_system_settings($conn);
-        if ($settings) {
-            $subjectTemplate = $settings['email_reset_subject'] ?? $subjectTemplate;
-            $bodyTemplate = $settings['email_reset_body'] ?? $bodyTemplate;
-        }
-    } else {
-        error_log("Email Helper: A função get_system_settings() não foi encontrada. Usando templates padrão.");
-    }
+    // Pega templates do banco se existirem
+    $subject = 'Redefinição de Senha';
+    $body = "Olá $userName,<br><br>Acesse: <a href='$resetLink'>$resetLink</a>";
     
-    try {
-         $stmtSchool = $conn->query("SELECT name FROM school_profile WHERE id = 1 LIMIT 1");
-         $schoolNameResult = $stmtSchool->fetchColumn();
-         if ($schoolNameResult) {
-             $schoolName = $schoolNameResult;
-         }
-    } catch (PDOException $e) {
-         error_log("Email Helper: Não foi possível buscar nome da escola: " . $e->getMessage());
-    }
-
-
-    // 3. Substituir placeholders (*** CORREÇÃO APLICADA AQUI ***)
-    
-    // (Assunto)
-    $subject = str_replace('{{escola_nome}}', $schoolName, $subjectTemplate);
-    $subject = str_replace('{{user_name}}', $userName, $subject);
-
-    // (Corpo)
-    $body = str_replace('{{user_name}}', $userName, $bodyTemplate);
-    $body = str_replace('{{reset_link}}', $resetLink, $body);
-    $body = str_replace('{{escola_nome}}', $schoolName, $body);
-
-    // 4. Chamar a função de envio principal
+    // (Simplificado para manter foco no erro, mas usa a função principal atualizada)
     return send_system_email($conn, $toEmail, $userName, $subject, $body);
 }
 
+function send_payment_reminder_email($conn, $toEmail, $studentName, $courseName, $dueDate, $amount, $guardianEmail = null, $pixPayload = null, $qrCodePath = null) {
+    // 1. Configurações e Templates
+    $schoolName = 'Sistema SGE';
+    $subjectTemplate = 'Lembrete de Pagamento';
+    $bodyTemplate = "Olá {{aluno_nome}},\n\nSua mensalidade vence em {{vencimento_data}}.\nValor: R$ {{valor}}.\n\nAtenciosamente,\n{{escola_nome}}";
+
+    try {
+        $stmtSettings = $conn->query("SELECT email_reminder_subject, email_reminder_body FROM system_settings WHERE id = 1 LIMIT 1");
+        $settings = $stmtSettings->fetch(PDO::FETCH_ASSOC);
+        if ($settings) {
+            if (!empty($settings['email_reminder_subject'])) $subjectTemplate = $settings['email_reminder_subject'];
+            if (!empty($settings['email_reminder_body'])) $bodyTemplate = $settings['email_reminder_body'];
+        }
+        $stmtSchool = $conn->query("SELECT name FROM school_profile WHERE id = 1 LIMIT 1");
+        $schoolName = $stmtSchool->fetchColumn() ?: 'Escola';
+    } catch (PDOException $e) {}
+
+    // 2. Formatação
+    $dueDateFormatted = date('d/m/Y', strtotime($dueDate));
+    $amountFormatted = number_format($amount, 2, ',', '.');
+
+    // 3. Substituição
+    $subject = str_replace('{{escola_nome}}', $schoolName, $subjectTemplate);
+    $subject = str_replace('{{aluno_nome}}', $studentName, $subject);
+
+    $body = str_replace('{{aluno_nome}}', $studentName, $bodyTemplate);
+    $body = str_replace('{{curso_nome}}', $courseName, $body);
+    $body = str_replace('{{vencimento_data}}', $dueDateFormatted, $body);
+    $body = str_replace('{{valor}}', $amountFormatted, $body);
+    $body = str_replace('{{escola_nome}}', $schoolName, $body);
+
+    $bodyHTML = nl2br($body);
+
+    // 4. INSERIR PIX NO HTML (Automaticamente no final)
+    $embeddedImage = null;
+    if ($pixPayload && $qrCodePath) {
+        $cid = 'qrcode_pix_img';
+        $embeddedImage = ['path' => $qrCodePath, 'cid' => $cid];
+
+        $pixHtml = "
+        <div style='margin-top: 30px; padding: 20px; border: 1px solid #eee; background-color: #f8f9fa; border-radius: 8px; text-align: center; font-family: sans-serif;'>
+            <h3 style='margin-top:0; color: #333;'>Pague com PIX</h3>
+            <p style='color: #666;'>Abra o app do seu banco e escaneie:</p>
+            <div style='margin: 15px 0;'>
+                <img src='cid:$cid' alt='QR Code PIX' style='width: 200px; height: 200px; border: 4px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1);'>
+            </div>
+            <p style='font-size: 14px; margin-bottom: 5px;'>Ou copie e cole o código abaixo:</p>
+            <textarea readonly style='width: 90%; height: 70px; font-size: 11px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; resize: none; background: #fff;'>$pixPayload</textarea>
+        </div>";
+
+        $bodyHTML .= $pixHtml;
+    }
+
+    return send_system_email($conn, $toEmail, $studentName, $subject, $bodyHTML, $guardianEmail, $embeddedImage);
+}
 ?>

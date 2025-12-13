@@ -21,79 +21,156 @@ export async function renderSystemSettingsView() {
     `;
 
     return `
-        <div class="view-header">
-            <h2>Configurações do Sistema</h2>
+        <div class="header-section">
+            <h2>⚙️ Configurações do Sistema</h2>
             <button class="back-button" onclick="window.AppHandlers.handleNavigateBackToDashboard()">← Voltar</button>
         </div>
 
-        <form onsubmit="window.AppHandlers.handleUpdateSystemSettings(event)">
-            ${hiddenTemplateFields} 
-
-            <div class="card full-width">
-                 <h3 class="card-title">Modelos de Documentos e Certificados</h3>
-                 <p>Gerencie os textos e layouts dos documentos gerados pelo sistema.</p>
-                 <div class="list-item-actions" style="justify-content: flex-start;">
-                    <button type="button" class="action-button" onclick="window.AppHandlers.handleNavigateToDocumentTemplates()">Gerir Contrato/Termos</button>
-                    <button type="button" class="action-button" onclick="window.AppHandlers.handleNavigateToCertificateTemplate()">Gerir Certificado</button>
-                 </div>
-            </div>
-
-            <div class="card full-width">
-                <div class="settings-grid">
+        <form id="system-settings-form" onsubmit="window.AppHandlers.handleUpdateSystemSettings(event)">
+            ${hiddenTemplateFields}
+            <div class="settings-grid">
+                
+                <div class="settings-column">
                     <div class="settings-section">
-                        <h3 class="card-title">⚙️ Geral</h3>
-                         <div class="form-group"> <label for="language">Linguagem</label> <select id="language" name="language"><option value="pt-BR" ${settings.language === 'pt-BR' ? 'selected' : ''}>Português (Brasil)</option></select> </div>
-                        <div class="form-group"> <label for="timeZone">Fuso Horário</label> <input type="text" id="timeZone" name="timeZone" value="${settings.timeZone || 'America/Sao_Paulo'}"><small>Ex: America/Sao_Paulo</small> </div>
-                        <div class="form-group" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);"> <label for="site_url">URL do Site (Raiz do SGE)</label> <input type="url" id="site_url" name="site_url" value="${settings.site_url || ''}" placeholder="https://.../sge/" required><small>Necessário para links. Use URL completa com "/" no final.</small> </div>
-                    </div>
-
-                    <div class="settings-section">
-                        <h3 class="card-title">💰 Financeiro</h3>
-                        <div class="form-group"> <label for="currencySymbol">Símbolo da Moeda</label> <input type="text" id="currencySymbol" name="currencySymbol" value="${settings.currencySymbol || 'R$'}"> </div>
-                         <div class="form-group"> <label for="defaultDueDay">Dia Padrão de Vencimento</label> <input type="number" id="defaultDueDay" name="defaultDueDay" value="${settings.defaultDueDay || 10}" min="1" max="28"> </div>
-                        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
-                            <h4 style="margin-top: 0; margin-bottom: 1rem;">Multa Rescisória</h4>
-                            <div class="form-group"> <label class="form-group-inline" style="gap: 0.5rem; cursor: pointer;"> <input type="checkbox" id="enableTerminationFine" name="enableTerminationFine" ${settings.enableTerminationFine ? 'checked' : ''} onchange="document.getElementById('termination-fine-months-group').style.display = this.checked ? 'block' : 'none'" style="width: auto;"> <span>Habilitar multa</span> </label> </div>
-                            <div class="form-group" id="termination-fine-months-group" style="display: ${settings.enableTerminationFine ? 'block' : 'none'};"> <label for="terminationFineMonths">Nº de Mensalidades</label> <input type="number" id="terminationFineMonths" name="terminationFineMonths" value="${settings.terminationFineMonths || 1}" min="1"> </div>
+                        <h3 class="card-title">🏫 Configurações da Escola</h3>
+                         <div class="form-group">
+                            <label>Nome do Sistema / Escola</label>
+                            <input type="text" name="name" class="form-control" value="${settings.name || ''}" disabled title="Edite no Perfil da Escola">
+                        </div>
+                        <div class="form-group">
+                            <label>URL do Site (Base URL)</label>
+                            <input type="text" name="site_url" class="form-control" value="${settings.site_url || ''}">
+                            <small>Ex: http://localhost/sge/</small>
+                        </div>
+                         <div class="form-group">
+                            <label>Fuso Horário</label>
+                            <input type="text" name="timeZone" class="form-control" value="${settings.timeZone || 'America/Sao_Paulo'}">
+                        </div>
+                         <div class="form-group">
+                            <label>Idioma Padrão</label>
+                            <input type="text" name="language" class="form-control" value="${settings.language || 'pt-BR'}">
                         </div>
                     </div>
 
                     <div class="settings-section">
-                        <h3 class="card-title">🤖 Integração com IA</h3>
-                        <div class="form-group"><label for="geminiApiKey">Chave API Gemini</label><input type="password" id="geminiApiKey" name="geminiApiKey" value="${settings.geminiApiKey || ''}"></div>
-                        <div class="form-group"><label for="geminiApiEndpoint">URL Endpoint</label><input type="text" id="geminiApiEndpoint" name="geminiApiEndpoint" value="${settings.geminiApiEndpoint || ''}" placeholder="https://generativelanguage..."><small>Ex: .../gemini-1.5-flash:generateContent</small></div>
+                        <h3 class="card-title">📧 Configurações de E-mail (SMTP)</h3>
+                        <div class="form-group">
+                            <label>Servidor SMTP</label>
+                            <input type="text" name="smtpServer" class="form-control" value="${settings.smtpServer || ''}" placeholder="Ex: smtp.gmail.com">
+                        </div>
+                        <div class="form-group">
+                            <label>Porta SMTP</label>
+                            <input type="text" name="smtpPort" class="form-control" value="${settings.smtpPort || ''}" placeholder="Ex: 587 ou 465">
+                        </div>
+                        <div class="form-group">
+                            <label>Usuário SMTP (E-mail)</label>
+                            <input type="text" name="smtpUser" class="form-control" value="${settings.smtpUser || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label>Senha SMTP</label>
+                            <input type="password" name="smtpPass" class="form-control" value="${settings.smtpPass || ''}" placeholder="Deixe em branco para não alterar">
+                        </div>
                     </div>
 
                     <div class="settings-section">
-                        <h3 class="card-title">✉️ E-mail (SMTP)</h3>
-                        <div class="form-group"><label for="smtpServer">Servidor</label><input type="text" id="smtpServer" name="smtpServer" value="${settings.smtpServer || ''}" placeholder="smtp.exemplo.com"></div>
-                        <div class="form-group"><label for="smtpPort">Porta</label><input type="text" id="smtpPort" name="smtpPort" value="${settings.smtpPort || ''}" placeholder="587"></div>
-                        <div class="form-group"><label for="smtpUser">Usuário</label><input type="text" id="smtpUser" name="smtpUser" value="${settings.smtpUser || ''}" placeholder="seu@email.com"></div>
-                        <div class="form-group"><label for="smtpPass">Senha</label><input type="password" id="smtpPass" name="smtpPass" value="${settings.smtpPass || ''}"></div>
+                        <h3 class="card-title">📝 Templates de E-mail (Aprovação / Senha)</h3>
+                        <div class="form-group">
+                            <label>Assunto (Aprovação de Matrícula)</label>
+                            <input type="text" name="email_approval_subject" class="form-control" value="${settings.email_approval_subject || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label>Corpo (Aprovação de Matrícula)</label>
+                            <textarea name="email_approval_body" class="form-control" style="height: 100px;">${settings.email_approval_body || ''}</textarea>
+                        </div>
+                         <div class="form-group">
+                            <label>Assunto (Redefinição de Senha)</label>
+                            <input type="text" name="email_reset_subject" class="form-control" value="${settings.email_reset_subject || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label>Corpo (Redefinição de Senha)</label>
+                            <textarea name="email_reset_body" class="form-control" style="height: 100px;">${settings.email_reset_body || ''}</textarea>
+                        </div>
+                        <small>Placeholders comuns: ${emailPlaceholders.join(', ')}</small>
                     </div>
 
-                    <div class="settings-section" style="grid-column: span 2;">
-                        <h3 class="card-title">📧 Modelos de E-mail</h3>
-                        <div class="placeholders-sidebar" style="padding: 10px; font-size: 0.8rem; background-color: var(--subtle-bg); border-radius: 8px; margin-bottom: 1.5rem;"> <strong>Placeholders:</strong><br> ${emailPlaceholders.map(ph => `<button type="button" class="placeholder-button" style="margin: 2px;" onclick="navigator.clipboard.writeText('${ph}')">${ph}</button>`).join('')} </div>
-
-                        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
-                            <h4 style="margin-top: 0;">1. Matrícula Aprovada</h4>
-                            <div class="form-group"> <label for="email_approval_subject">Assunto</label> <input type="text" id="email_approval_subject" name="email_approval_subject" value="${settings.email_approval_subject || 'Matrícula Aprovada!'}"> </div>
-                            <div class="form-group"> <label for="email_approval_body">Corpo</label> <textarea id="email_approval_body" name="email_approval_body" rows="8">${settings.email_approval_body || `Olá {{responsavel_nome}},\n\nParabéns! A matrícula de {{aluno_nome}} no curso {{curso_nome}} foi aprovada.\n\nVeja seu contrato:\n{{link_contrato}}\n\nAtenciosamente,\nEquipe {{escola_nome}}`}</textarea> </div>
+                    <div class="settings-section">
+                        <h3 class="card-title">⏰ Automação de Cobrança</h3>
+                        <div class="form-group">
+                            <label>Dias de Antecedência para o Lembrete</label>
+                            <input type="number" name="reminderDaysBefore" class="form-control" value="${settings.reminderDaysBefore || 3}" min="1" max="30">
+                            <small>Quantos dias antes do vencimento o e-mail deve ser enviado.</small>
                         </div>
+                        <div class="form-group">
+                            <label>Assunto do E-mail de Lembrete</label>
+                            <input type="text" name="email_reminder_subject" class="form-control" value="${settings.email_reminder_subject || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label>Corpo do E-mail de Lembrete</label>
+                            <textarea name="email_reminder_body" class="form-control" style="height: 150px;">${settings.email_reminder_body || ''}</textarea>
+                            <small>Variáveis exclusivas deste e-mail: {{aluno_nome}}, {{curso_nome}}, {{vencimento_data}}, {{valor}}, {{escola_nome}}</small>
+                        </div>
+                    </div>
 
-                        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
-                            <h4 style="margin-top: 0;">2. Redefinição de Senha</h4>
-                            <div class="form-group"> <label for="email_reset_subject">Assunto</label> <input type="text" id="email_reset_subject" name="email_reset_subject" value="${settings.email_reset_subject || 'Redefinição de Senha Solicitada'}"> </div>
-                            <div class="form-group"> <label for="email_reset_body">Corpo</label> <textarea id="email_reset_body" name="email_reset_body" rows="8">${settings.email_reset_body || `Olá {{user_name}},\n\nLink para redefinir sua senha (expira em 1 hora):\n{{reset_link}}\n\nAtenciosamente,\nEquipe {{escola_nome}}`}</textarea> </div>
+                </div>
+
+                <div class="settings-column">
+                    <div class="settings-section">
+                        <h3 class="card-title">💰 Configurações Financeiras</h3>
+                        <div class="form-group">
+                            <label>Símbolo da Moeda</label>
+                            <input type="text" name="currencySymbol" class="form-control" value="${settings.currencySymbol || 'R$'}">
+                        </div>
+                        <div class="form-group">
+                            <label>Dia Padrão de Vencimento</label>
+                            <input type="number" name="defaultDueDay" class="form-control" value="${settings.defaultDueDay || 10}">
+                        </div>
+                        
+                        <div class="form-group checkbox-group">
+                            <input type="hidden" name="enableTerminationFine" value="0">
+                            <input type="checkbox" id="enableTerminationFine" name="enableTerminationFine" value="1" ${settings.enableTerminationFine == 1 ? 'checked' : ''}>
+                            <label for="enableTerminationFine">Habilitar Multa de Rescisão</label>
+                        </div>
+                         <div class="form-group">
+                            <label>Meses para base de cálculo da multa</label>
+                            <input type="number" name="terminationFineMonths" class="form-control" value="${settings.terminationFineMonths || 1}">
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3 class="card-title">✨ Integração Gemini AI</h3>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" name="geminiApiKey" class="form-control" value="${settings.geminiApiKey || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label>Endpoint (Opcional)</label>
+                            <input type="text" name="geminiApiEndpoint" class="form-control" value="${settings.geminiApiEndpoint || ''}">
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                         <h3 class="card-title">💳 Mercado Pago (Integração)</h3>
+                         <div class="form-group">
+                            <label>Ativar Integração?</label>
+                            <select name="mp_active" class="form-control">
+                                <option value="false" ${settings.mp_active === 'false' ? 'selected' : ''}>Não</option>
+                                <option value="true" ${settings.mp_active === 'true' ? 'selected' : ''}>Sim</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Public Key (Chave Pública)</label>
+                            <input type="text" name="mp_public_key" class="form-control" value="${settings.mp_public_key || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label>Access Token (Token de Acesso)</label>
+                            <input type="password" name="mp_access_token" class="form-control" value="${settings.mp_access_token || ''}">
                         </div>
                     </div>
 
                     <div class="settings-section">
                         <h3 class="card-title">🔄 Atualização do Sistema</h3>
                         <div id="update-status-container">
-                            <p class="small-text">Verifique se há novas versões disponíveis no repositório.</p>
-                            <div id="update-info-display" style="display:none; margin-bottom: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px;">
+                            <div class="version-display" style="margin-bottom: 15px;">
                                 <strong>Versão Atual:</strong> <span id="local-version">-</span><br>
                                 <strong>Nova Versão:</strong> <span id="remote-version">-</span>
                             </div>

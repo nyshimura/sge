@@ -36,138 +36,128 @@ function handle_get_school_profile($conn, $data) {
         return;
     }
     try {
-        $stmt = $conn->prepare("SELECT * FROM `school_profile` WHERE `id` = 1 LIMIT 1");
-        $stmt->execute();
+        $stmt = $conn->query("SELECT * FROM `school_profile` WHERE `id` = 1 LIMIT 1");
         $profile = $stmt->fetch(PDO::FETCH_ASSOC);
         send_response(true, ['profile' => $profile]);
     } catch (PDOException $e) {
         error_log("Erro PDO em handle_get_school_profile: " . $e->getMessage());
-        send_response(false, ['message' => "Erro ao buscar perfil da escola."], 500);
+        send_response(false, 'Erro ao buscar perfil da escola.', 500);
     }
 }
 
 function handle_update_school_profile($conn, $data) {
-    if (empty($data['profile'])) {
-        send_response(false, 'Dados do perfil ausentes.', 400);
-        return;
-    }
-    $profileData = $data['profile'];
+    // Verifica se os dados vieram dentro de 'profile' ou na raiz
+    $profileData = $data['profile'] ?? $data;
+
     $fields = [];
-    $params = [];
+    $params = [':id' => 1];
+
+    $allowedFields = [
+        'name', 'cnpj', 'state', 'schoolCity', 'address', 'phone', 
+        'pixKeyType', 'pixKey', 'profilePicture', 'signatureImage'
+    ];
 
     foreach ($profileData as $key => $value) {
-        if ($key === 'id') continue; 
-        $fields[] = "`$key` = :$key";
-        $params[":$key"] = $value;
+        if (in_array($key, $allowedFields)) {
+            $fields[] = "`$key` = :$key";
+            $params[":$key"] = $value;
+        }
     }
-    $params[':id'] = 1;
 
     if (empty($fields)) {
-        send_response(true, ['message' => 'Nenhuma alteração enviada.']);
+        send_response(false, 'Nenhum dado válido para atualizar.', 400);
         return;
     }
 
+    $sql = "UPDATE `school_profile` SET " . implode(', ', $fields) . " WHERE `id` = :id";
+
     try {
-        $sql = "UPDATE `school_profile` SET " . implode(', ', $fields) . " WHERE `id` = :id";
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
-        send_response(true, ['message' => 'Perfil atualizado com sucesso.']);
+        send_response(true, ['message' => 'Perfil da escola atualizado com sucesso.']);
     } catch (PDOException $e) {
-        error_log("Erro PDO update escola: " . $e->getMessage());
-        send_response(false, ['message' => "Erro ao atualizar perfil."], 500);
-    }
-}
-
-function handle_upload_school_logo($conn) {
-    if (!isset($_FILES['logo']) || $_FILES['logo']['error'] !== UPLOAD_ERR_OK) {
-        send_response(false, 'Nenhum arquivo enviado ou erro no upload.', 400);
-        return;
-    }
-
-    $fileTmpPath = $_FILES['logo']['tmp_name'];
-    $fileType = $_FILES['logo']['type'];
-
-    // Validação simples de imagem
-    if (strpos($fileType, 'image/') !== 0) {
-        send_response(false, 'O arquivo deve ser uma imagem.', 400);
-        return;
-    }
-
-    // Converte para Base64
-    $data = file_get_contents($fileTmpPath);
-    $base64 = 'data:' . $fileType . ';base64,' . base64_encode($data);
-
-    try {
-        $stmt = $conn->prepare("UPDATE `school_profile` SET `profilePicture` = :pic WHERE `id` = 1");
-        $stmt->execute([':pic' => $base64]);
-        send_response(true, ['message' => 'Logo atualizado.', 'path' => $base64]);
-    } catch (PDOException $e) {
-        error_log("Erro PDO upload logo: " . $e->getMessage());
-        send_response(false, ['message' => "Erro ao salvar logo no banco."], 500);
+        error_log("Erro PDO em handle_update_school_profile: " . $e->getMessage());
+        send_response(false, 'Erro ao atualizar perfil.', 500);
     }
 }
 
 function handle_get_system_settings($conn, $data) {
     $settings = get_system_settings($conn);
+    
     if ($settings) {
+        // --- ALTERAÇÃO AQUI: Buscar o nome da escola para exibição ---
+        try {
+            $stmtSchool = $conn->query("SELECT name FROM school_profile WHERE id = 1 LIMIT 1");
+            $schoolName = $stmtSchool->fetchColumn();
+            // Injeta o nome no array de settings para o frontend consumir
+            $settings['name'] = $schoolName ? $schoolName : ''; 
+        } catch (Exception $e) {
+            // Se falhar, apenas segue sem o nome
+            error_log("Erro ao buscar nome da escola em settings: " . $e->getMessage());
+        }
+        // -------------------------------------------------------------
+
         send_response(true, ['settings' => $settings]);
     } else {
-        send_response(false, ['message' => "Configurações não encontradas."], 404);
+        send_response(false, 'Erro ao buscar configurações do sistema.', 500);
     }
 }
 
 function handle_update_system_settings($conn, $data) {
-    if (empty($data['settings'])) {
-        send_response(false, 'Dados ausentes.', 400);
-        return;
-    }
+    // Garante que pega os dados corretamente (da chave 'settings' ou da raiz)
+    $settings = $data['settings'] ?? $data;
 
-    $settings = $data['settings'];
     $fields = [];
-    $params = [];
+    $params = [':id' => 1];
+
+    // Lista de campos permitidos (Note que 'name' NÃO está aqui, então é seguro)
+    $allowedFields = [
+        'smtpServer', 'smtpPort', 'smtpUser', 'smtpPass',
+        'email_approval_subject', 'email_approval_body',
+        'email_reset_subject', 'email_reset_body',
+        'email_reminder_subject', 'email_reminder_body', 'reminderDaysBefore',
+        'site_url', 'language', 'timeZone', 'currencySymbol',
+        'enableTerminationFine', 'terminationFineMonths', 'defaultDueDay',
+        'geminiApiKey', 'geminiApiEndpoint',
+        'mp_active', 'mp_public_key', 'mp_access_token',
+        'dbHost', 'dbUser', 'dbPass', 'dbName', 'dbPort',
+        'profilePicture', 'signatureImage' 
+    ];
 
     foreach ($settings as $key => $value) {
-        // Proteção simples contra SQL Injection nos nomes das colunas (apenas letras, números e _)
-        if (!preg_match('/^[a-zA-Z0-9_]+$/', $key)) continue; 
-        if ($key === 'id') continue;
-
-        $fields[] = "`$key` = :$key";
-        $params[":$key"] = $value;
+        if (in_array($key, $allowedFields)) {
+            $fields[] = "`$key` = :$key";
+            $params[":$key"] = $value;
+        }
     }
-    $params[':id'] = 1; 
 
     if (empty($fields)) {
-        send_response(true, ['message' => 'Nenhuma alteração enviada.']);
+        send_response(false, 'Nenhum dado para atualizar.', 400);
         return;
     }
 
+    $sql = "UPDATE `system_settings` SET " . implode(', ', $fields) . " WHERE `id` = :id";
+
     try {
-        $sql = "UPDATE `system_settings` SET " . implode(', ', $fields) . " WHERE `id` = :id";
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
-        send_response(true, ['message' => 'Configurações atualizadas.']);
+        send_response(true, ['message' => 'Configurações do sistema atualizadas.']);
     } catch (PDOException $e) {
-        error_log("Erro PDO update settings: " . $e->getMessage());
-        send_response(false, ['message' => "Erro ao salvar configurações."], 500);
+        error_log("Erro PDO em handle_update_system_settings: " . $e->getMessage());
+        send_response(false, 'Erro ao atualizar configurações.', 500);
     }
 }
 
 function handle_update_document_templates($conn, $data) {
-    if (empty($data['settings'])) {
-        send_response(false, 'Dados de template ausentes.', 400);
-        return;
-    }
-
-    $settings = $data['settings'];
+    $settings = $data['settings'] ?? $data;
     $fields = [];
     $params = [':id' => 1];
 
-    // Mapeamento seguro dos campos permitidos para esta ação
     $allowedFields = [
+        'certificate_template_text',
         'enrollmentContractText',
         'imageTermsText',
-        'certificate_template_text',
-        'certificate_background_image' // Permitir atualizar a imagem se vier
+        'certificate_background_image' 
     ];
 
     foreach ($settings as $key => $value) {
@@ -180,8 +170,7 @@ function handle_update_document_templates($conn, $data) {
     if (!empty($fields)) {
         $setFields = implode(', ', $fields);
         $sql = "UPDATE `system_settings` SET {$setFields} WHERE `id` = :id";
-        // error_log("SQL Query (document templates): " . $sql); // Debug
-
+        
         try {
             $stmt = $conn->prepare($sql);
             $stmt->execute($params);
@@ -198,8 +187,7 @@ function handle_update_document_templates($conn, $data) {
             send_response(false, ['message' => "Erro interno ao salvar modelos."], 500);
         }
     } else {
-        error_log("Nenhum campo de template recebido para atualização.");
-        send_response(true, ['message' => 'Nenhuma alteração enviada.', 'success' => true]);
+        send_response(false, ['message' => "Nenhum campo válido para salvar."], 400);
     }
 }
 ?>

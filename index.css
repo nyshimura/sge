@@ -879,34 +879,71 @@ th {
     margin: 0.5rem 0;
 }
 
-/* Settings Page */
+/* ========================================= */
+/* Settings Page (Layout Ajustado) */
+/* ========================================= */
+
 .settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
-   
-}
-.settings-section {
-    padding: 1.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    
-}
-.settings-section h3 {
-    margin-top: 0;
-    
+    grid-template-columns: 1fr; /* Mobile: 1 coluna empilhada */
+    gap: 1.5rem;
+    align-items: start;
+    width: 100%;
 }
 
-@media (max-width: 900px) {
-  .settings-grid {
+/* Desktop: 2 Colunas reais */
+@media (min-width: 992px) {
+    .settings-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem; /* Espaço horizontal entre as colunas */
+    }
+}
+
+/* Coluna interna: Empilha os cards verticalmente com espaçamento */
+.settings-column {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-  }
-  .settings-section {
-    width: auto;
-    min-width: auto;
-  }
+    gap: 1.5rem; /* O PULO DO GATO: Espaço vertical entre os cards */
+    width: 100%;
+    min-width: 0; /* Evita estouro de layout em flex items */
+}
+
+/* Estilo do Card (Seção) */
+.settings-section {
+    background-color: var(--card-background);
+    padding: 1.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 2px 4px var(--shadow-color);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settings-section:hover {
+    box-shadow: 0 6px 12px var(--shadow-color); /* Efeito hover sutil */
+}
+
+/* Títulos das Seções */
+.settings-section h3.card-title {
+    margin-top: 0;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 1.2rem;
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Ajustes finos para formulários dentro dos cards */
+.settings-section .form-group {
+    margin-bottom: 1.25rem;
+}
+
+.settings-section small {
+    display: block;
+    margin-top: 0.4rem;
+    color: var(--secondary-color);
+    font-size: 0.85rem;
+    opacity: 0.8;
 }
 
 
