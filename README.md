@@ -78,14 +78,6 @@ Siga os passos abaixo para configurar o ambiente de desenvolvimento local (basea
 5.  **Executar:**
     * Acesse `http://localhost/sge` em seu navegador.
 
-## ⏰ Automação e Cron Jobs (Cobrança)
-
-Este sistema possui um módulo de **Automação de Cobrança** que envia e-mails com lembretes de vencimento e QR Code PIX.
-
-### Comando para Cron Job (cPanel/Hostinger)
-Use a Tarefa Cron Personalizada e insira o caminho completo do seu servidor:
-`/usr/bin/php /home/verifique-qual-seucaminho/domains/seudominio.com.br/public_html/sge/api/cron/send_reminders.php`.
-Ele deve ser executado **uma vez ao dia** `0 8 * * *`.
 
 ---
 

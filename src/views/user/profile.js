@@ -103,6 +103,7 @@ export async function renderProfileView(userId) {
                     <div class="profile-grid">
                         <div class="form-group"> <label>Bolsa (%)</label> <input type="number" id="scholarship-${e.courseId}" name="scholarshipPercentage" min="0" max="100" step="0.01" value="${e.scholarshipPercentage || '0'}"> </div>
                         <div class="form-group"> <label>Mensalidade (R$)</label> <input type="number" id="customFee-${e.courseId}" name="customMonthlyFee" min="0" step="0.01" placeholder="Padrão" value="${e.customMonthlyFee !== null ? e.customMonthlyFee : ''}"> </div>
+                        <div class="form-group"> <label>Dia Venc. (1-28)</label> <input type="number" id="customDueDay-${e.courseId}" name="customDueDay" min="1" max="28" placeholder="Padrão" value="${e.customDueDay !== null ? e.customDueDay : ''}"> </div>
                     </div>
                     <button type="button" class="action-button secondary" onclick="window.AppHandlers.handleUpdateEnrollmentDetails(event, ${userToView.id}, ${e.courseId})">Salvar Matrícula</button>
                     ${certificateForm}

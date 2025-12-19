@@ -140,11 +140,48 @@ export async function handleReactivateEnrollment(studentId, courseId) {
 }
 
 export async function handleUpdateEnrollmentDetails(event, studentId, courseId) {
-    const btn=event.target; const li = btn.closest('li.list-item'); if(!li) return; const schI = li.querySelector(`#scholarship-${courseId}`); const feeI = li.querySelector(`#customFee-${courseId}`); if (!schI || !feeI) { console.error("Inputs não encontrados"); return; }
-    const data={studentId,courseId,scholarshipPercentage:Math.max(0,Math.min(100,parseFloat(schI.value)||0)),customMonthlyFee:(feeI.value===''||isNaN(parseFloat(feeI.value))||parseFloat(feeI.value)<0)?null:parseFloat(feeI.value)};
-    btn.disabled=true; btn.textContent='Salvando...';
-    try { const res = await apiCall('updateEnrollmentDetails', data); alert(res.message || 'Atualizado.'); const idx = appState.enrollments.findIndex(e => e.studentId === studentId && e.courseId === courseId); if (idx > -1) { appState.enrollments[idx].scholarshipPercentage = data.scholarshipPercentage; appState.enrollments[idx].customMonthlyFee = data.customMonthlyFee; }
-        if (appState.viewingUserId === studentId || appState.financialState.expandedStudentId === studentId) { const pData = await apiCall('getStudentPayments', { studentId }, 'GET'); appState.payments = [...appState.payments.filter(p => p.studentId !== studentId), ...(pData.payments || [])]; } render();
-    } catch (e) { alert(e.message || 'Erro ao atualizar detalhes.');
-    } finally { btn.disabled = false; btn.textContent = 'Salvar Alterações da Matrícula'; }
+    const btn = event.target; 
+    const li = btn.closest('li.list-item'); 
+    if(!li) return; 
+
+    const schI = li.querySelector(`#scholarship-${courseId}`); 
+    const feeI = li.querySelector(`#customFee-${courseId}`); 
+    const dayI = li.querySelector(`#customDueDay-${courseId}`); // Captura o input do dia
+
+    if (!schI || !feeI) { console.error("Inputs não encontrados"); return; }
+
+    const data = {
+        studentId,
+        courseId,
+        scholarshipPercentage: Math.max(0, Math.min(100, parseFloat(schI.value) || 0)),
+        customMonthlyFee: (feeI.value === '' || isNaN(parseFloat(feeI.value)) || parseFloat(feeI.value) < 0) ? null : parseFloat(feeI.value),
+        customDueDay: (dayI && dayI.value !== '' && !isNaN(parseInt(dayI.value))) ? parseInt(dayI.value) : null // Envia o novo campo
+    };
+
+    btn.disabled = true; 
+    btn.textContent = 'Salvando...';
+
+    try { 
+        const res = await apiCall('updateEnrollmentDetails', data); 
+        alert(res.message || 'Atualizado.'); 
+        
+        const idx = appState.enrollments.findIndex(e => e.studentId === studentId && e.courseId === courseId); 
+        if (idx > -1) { 
+            appState.enrollments[idx].scholarshipPercentage = data.scholarshipPercentage; 
+            appState.enrollments[idx].customMonthlyFee = data.customMonthlyFee;
+            appState.enrollments[idx].customDueDay = data.customDueDay; // Atualiza estado local
+        }
+
+        if (appState.viewingUserId === studentId || appState.financialState.expandedStudentId === studentId) { 
+            const pData = await apiCall('getStudentPayments', { studentId }, 'GET'); 
+            appState.payments = [...appState.payments.filter(p => p.studentId !== studentId), ...(pData.payments || [])]; 
+        } 
+        render();
+
+    } catch (e) { 
+        alert(e.message || 'Erro ao atualizar detalhes.');
+    } finally { 
+        btn.disabled = false; 
+        btn.textContent = 'Salvar Alterações da Matrícula'; 
+    }
 }

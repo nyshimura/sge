@@ -129,92 +129,102 @@ function handle_approve_enrollment(PDO $conn, $data) {
 function handle_cancel_enrollment($conn, $data) { $sId=isset($data['studentId'])?(int)$data['studentId']:null;$cId=isset($data['courseId'])?(int)$data['courseId']:null;if(!$sId||!$cId){send_response(false,'IDs obrigatórios.',400);}$conn->beginTransaction();try{$stmt=$conn->prepare("UPDATE enrollments SET status='Cancelada' WHERE studentId=? AND courseId=? AND status='Aprovada'");$stmt->execute([$sId,$cId]);if($stmt->rowCount()==0){throw new Exception('Matrícula não aprovada.');}$setStmt=$conn->query("SELECT enableTerminationFine,terminationFineMonths FROM system_settings WHERE id=1");$set=$setStmt->fetch(PDO::FETCH_ASSOC);$fineE=isset($set['enableTerminationFine'])&&$set['enableTerminationFine']==1;$fineM=isset($set['terminationFineMonths'])?(int)$set['terminationFineMonths']:0;$msg='Matrícula trancada.';$payStmt=$conn->prepare("SELECT id FROM payments WHERE studentId=? AND courseId=? AND status IN ('Pendente','Atrasado') ORDER BY dueDate ASC");$payStmt->execute([$sId,$cId]);$fPay=$payStmt->fetchAll(PDO::FETCH_COLUMN);$toCancel=[];if(count($fPay)>0){if($fineE&&$fineM>0){$toCancel=array_slice($fPay,$fineM);$kept=count($fPay)-count($toCancel);if($kept>0)$msg.=" Multa de {$kept} mensalidade(s) mantida.";if(!empty($toCancel))$msg.=" Demais cancelados.";}else{$toCancel=$fPay;$msg.=' Pagamentos futuros cancelados.';}if(!empty($toCancel)){$phs=implode(',',array_fill(0,count($toCancel),'?'));$canSql="UPDATE payments SET status='Cancelado',paymentDate=NULL WHERE id IN ($phs)";$canStmt=$conn->prepare($canSql);$canStmt->execute($toCancel);}}else{$msg.=' Sem pagamentos futuros.';}$conn->commit();send_response(true,['message'=>$msg]);}catch(Exception $e){$conn->rollBack();error_log("Erro trancar: ".$e->getMessage());send_response(false,'Erro trancar: '.$e->getMessage(),500);} }
 function handle_reactivate_enrollment($conn, $data) { $sId=isset($data['studentId'])?(int)$data['studentId']:null;$cId=isset($data['courseId'])?(int)$data['courseId']:null;if(!$sId||!$cId){send_response(false,'IDs obrigatórios.',400);}$conn->beginTransaction();try{$stmt=$conn->prepare("UPDATE enrollments SET status='Aprovada' WHERE studentId=? AND courseId=? AND status='Cancelada'");$stmt->execute([$sId,$cId]);if($stmt->rowCount()==0){throw new Exception('Matrícula não cancelada.');}$payStmt=$conn->prepare("SELECT id,dueDate FROM payments WHERE studentId=? AND courseId=? AND status='Cancelado'");$payStmt->execute([$sId,$cId]);$canPay=$payStmt->fetchAll(PDO::FETCH_ASSOC);$today=new DateTime('now',new DateTimeZone('America/Sao_Paulo'));$today->setTime(0,0,0);foreach($canPay as $p){$due=new DateTime($p['dueDate'],new DateTimeZone('America/Sao_Paulo'));$due->setTime(0,0,0);$newS=($due<$today)?'Atrasado':'Pendente';$upP=$conn->prepare("UPDATE payments SET status=? WHERE id=?");$upP->execute([$newS,$p['id']]);}$conn->commit();send_response(true,['message'=>'Matrícula reativada. Pagamentos restaurados.']);}catch(Exception $e){$conn->rollBack();error_log("Erro reativar: ".$e->getMessage());send_response(false,'Erro reativar: '.$e->getMessage(),500);} }
 
-// --- CORREÇÃO: handle_update_enrollment_details com timezone corrigido (America/Sao_Paulo) ---
+// --- CORREÇÃO: handle_update_enrollment_details com timezone corrigido e customDueDay ---
 function handle_update_enrollment_details($conn, $data) { 
-    $sId=filter_var($data['studentId'],FILTER_VALIDATE_INT);
-    $cId=filter_var($data['courseId'],FILTER_VALIDATE_INT);
-    $sch=isset($data['scholarshipPercentage'])&&is_numeric($data['scholarshipPercentage'])?(float)$data['scholarshipPercentage']:0.0;
-    if($sch<0||$sch>100)$sch=0.0;
-    $cFee=isset($data['customMonthlyFee'])&&$data['customMonthlyFee']!==''&&is_numeric($data['customMonthlyFee'])&&(float)$data['customMonthlyFee']>=0?(float)$data['customMonthlyFee']:null;
+    $sId = filter_var($data['studentId'], FILTER_VALIDATE_INT);
+    $cId = filter_var($data['courseId'], FILTER_VALIDATE_INT);
     
-    if($sId===false||$cId===false){send_response(false,'IDs inválidos.',400);}
+    $sch = isset($data['scholarshipPercentage']) && is_numeric($data['scholarshipPercentage']) ? (float)$data['scholarshipPercentage'] : 0.0;
+    if ($sch < 0 || $sch > 100) $sch = 0.0;
+    
+    $cFee = isset($data['customMonthlyFee']) && $data['customMonthlyFee'] !== '' && is_numeric($data['customMonthlyFee']) && (float)$data['customMonthlyFee'] >= 0 ? (float)$data['customMonthlyFee'] : null;
+    
+    // Validação do customDueDay
+    $cDue = isset($data['customDueDay']) && is_numeric($data['customDueDay']) ? (int)$data['customDueDay'] : null;
+    if ($cDue !== null && ($cDue < 1 || $cDue > 28)) $cDue = null; // Garante limite seguro
+
+    if ($sId === false || $cId === false) { send_response(false, 'IDs inválidos.', 400); }
     
     $conn->beginTransaction();
-    try{
-        $upStmt=$conn->prepare("UPDATE enrollments SET scholarshipPercentage=?,customMonthlyFee=? WHERE studentId=? AND courseId=?");
-        $upStmt->execute([$sch,$cFee,$sId,$cId]);
+    try {
+        // Atualiza incluindo customDueDay
+        $upStmt = $conn->prepare("UPDATE enrollments SET scholarshipPercentage=?, customMonthlyFee=?, customDueDay=? WHERE studentId=? AND courseId=?");
+        $upStmt->execute([$sch, $cFee, $cDue, $sId, $cId]);
         
-        $delStmt=$conn->prepare("DELETE FROM payments WHERE studentId=? AND courseId=? AND status IN ('Pendente','Atrasado')");
-        $delStmt->execute([$sId,$cId]);
+        // Remove pagamentos pendentes/atrasados antigos
+        $delStmt = $conn->prepare("DELETE FROM payments WHERE studentId=? AND courseId=? AND status IN ('Pendente','Atrasado')");
+        $delStmt->execute([$sId, $cId]);
         
-        $stD=$conn->prepare("SELECT c.monthlyFee,c.paymentType,c.installments,e.billingStartDate FROM courses c JOIN enrollments e ON c.id=e.courseId WHERE e.studentId=? AND e.courseId=? AND e.status='Aprovada'");
-        $stD->execute([$sId,$cId]);
-        $d=$stD->fetch();
+        $stD = $conn->prepare("SELECT c.monthlyFee, c.paymentType, c.installments, e.billingStartDate FROM courses c JOIN enrollments e ON c.id=e.courseId WHERE e.studentId=? AND e.courseId=? AND e.status='Aprovada'");
+        $stD->execute([$sId, $cId]);
+        $d = $stD->fetch();
         
-        if($d){
-            $dueDay=$conn->query("SELECT defaultDueDay FROM system_settings WHERE id=1")->fetchColumn()??10;
-            $dueDay=max(1,min(28,(int)$dueDay));
+        if ($d) {
+            $sysDueDay = $conn->query("SELECT defaultDueDay FROM system_settings WHERE id=1")->fetchColumn() ?? 10;
             
-            if($sch<100){
-                $bA=$cFee!==null?$cFee:($d['monthlyFee']??0);
-                $fA=round($bA*(1-($sch/100)),2);
+            // Define o dia efetivo: Personalizado > Sistema
+            $effectiveDueDay = $cDue !== null ? $cDue : $sysDueDay;
+            $effectiveDueDay = max(1, min(28, (int)$effectiveDueDay));
+            
+            if ($sch < 100) {
+                $bA = $cFee !== null ? $cFee : ($d['monthlyFee'] ?? 0);
+                $fA = round($bA * (1 - ($sch / 100)), 2);
                 
-                if($fA>0){
-                    $lastP=$conn->prepare("SELECT MAX(referenceDate) as lastDate FROM payments WHERE studentId=? AND courseId=? AND status='Pago'");
-                    $lastP->execute([$sId,$cId]);
-                    $lastPD=$lastP->fetchColumn();
-                    $startD=null;
+                if ($fA > 0) {
+                    $lastP = $conn->prepare("SELECT MAX(referenceDate) as lastDate FROM payments WHERE studentId=? AND courseId=? AND status='Pago'");
+                    $lastP->execute([$sId, $cId]);
+                    $lastPD = $lastP->fetchColumn();
+                    $startD = null;
                     
-                    if($lastPD){
-                        $startD=new DateTime($lastPD,new DateTimeZone('America/Sao_Paulo'));
+                    if ($lastPD) {
+                        $startD = new DateTime($lastPD, new DateTimeZone('America/Sao_Paulo'));
                         $startD->modify('first day of next month');
-                    }elseif($d['billingStartDate']){
-                        // *** CORREÇÃO AQUI: America/Sao_Paulo (com underscore) ***
-                        $startD=new DateTime($d['billingStartDate'],new DateTimeZone('America/Sao_Paulo'));
+                    } elseif ($d['billingStartDate']) {
+                        $startD = new DateTime($d['billingStartDate'], new DateTimeZone('America/Sao_Paulo'));
                         $startD->modify('first day of this month');
                         
-                        $nowD=new DateTime('now',new DateTimeZone('America/Sao_Paulo'));
-                        if($startD<$nowD){
-                            $startD=$nowD;
+                        $nowD = new DateTime('now', new DateTimeZone('America/Sao_Paulo'));
+                        if ($startD < $nowD) {
+                            $startD = $nowD;
                             $startD->modify('first day of this month');
                         }
                     }
                     
-                    if($startD){
-                        $paidC=$conn->prepare("SELECT COUNT(id) FROM payments WHERE studentId=? AND courseId=? AND status='Pago'");
-                        $paidC->execute([$sId,$cId]);
-                        $pMadeC=$paidC->fetchColumn();
-                        $limit=0;
+                    if ($startD) {
+                        $paidC = $conn->prepare("SELECT COUNT(id) FROM payments WHERE studentId=? AND courseId=? AND status='Pago'");
+                        $paidC->execute([$sId, $cId]);
+                        $pMadeC = $paidC->fetchColumn();
+                        $limit = 0;
                         
-                        if($d['paymentType']==='parcelado'&&!empty($d['installments'])&&$d['installments']>0){
-                            $rem=(int)$d['installments']-$pMadeC;
-                            $limit=max(0,$rem);
-                        }else{
-                            $limit=12;
+                        if ($d['paymentType'] === 'parcelado' && !empty($d['installments']) && $d['installments'] > 0) {
+                            $rem = (int)$d['installments'] - $pMadeC;
+                            $limit = max(0, $rem);
+                        } else {
+                            $limit = 12;
                         }
                         
-                        $curD=clone $startD;
-                        for($i=0;$i<$limit;$i++){
-                            $refD=$curD->format('Y-m-01');
-                            $lastDay=(int)$curD->format('t');
-                            $actDue=min($dueDay,$lastDay);
-                            $dueD=$curD->format('Y-m-').str_pad($actDue,2,'0',STR_PAD_LEFT);
-                            $insStmt=$conn->prepare("INSERT INTO payments(studentId,courseId,amount,referenceDate,dueDate,status)VALUES(?,?,?,?,?,'Pendente')");
-                            $insStmt->execute([$sId,$cId,$fA,$refD,$dueD]);
+                        $curD = clone $startD;
+                        for ($i = 0; $i < $limit; $i++) {
+                            $refD = $curD->format('Y-m-01');
+                            $lastDay = (int)$curD->format('t');
+                            $actDue = min($effectiveDueDay, $lastDay);
+                            $dueD = $curD->format('Y-m-') . str_pad($actDue, 2, '0', STR_PAD_LEFT);
+                            $insStmt = $conn->prepare("INSERT INTO payments(studentId,courseId,amount,referenceDate,dueDate,status)VALUES(?,?,?,?,?,'Pendente')");
+                            $insStmt->execute([$sId, $cId, $fA, $refD, $dueD]);
                             $curD->modify('+1 month');
                         }
-                    }else{
+                    } else {
                         error_log("Falha startDate $sId,$cId");
                     }
                 }
             }
         } 
         $conn->commit();
-        send_response(true,['message'=>'Detalhes atualizados. Pagamentos recalculados.']);
-    }catch(Exception $e){
+        send_response(true, ['message' => 'Detalhes atualizados. Pagamentos recalculados com novo vencimento.']);
+    } catch (Exception $e) {
         $conn->rollBack();
-        error_log("Erro updateEnrollDet: ".$e->getMessage());
-        send_response(false,'Erro ao atualizar: '.$e->getMessage(),500);
+        error_log("Erro updateEnrollDet: " . $e->getMessage());
+        send_response(false, 'Erro ao atualizar: ' . $e->getMessage(), 500);
     } 
 }
 
