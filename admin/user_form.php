@@ -2,7 +2,7 @@
 // admin/user_form.php
 include '../includes/admin_header.php';
 
-// Garante que apenas admins/superadmins acessem (já verificado no header, mas reforçando)
+// Garante que apenas admins/superadmins acessem
 checkRole(['admin', 'superadmin']);
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
@@ -45,12 +45,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $cpf = cleanInput($_POST['cpf']);
     $password = $_POST['password']; 
 
+    // 2. Gera Imagem (DiceBear) - Lógica adicionada conforme solicitado
+    $seed = urlencode($firstName . ' ' . $lastName);
+    $urlAvatar = "https://api.dicebear.com/9.x/adventurer/svg?seed=" . $seed;
+    $svgData = @file_get_contents($urlAvatar);
+    $base64Image = null;
+    
+    if ($svgData !== false) {
+        $base64Image = 'data:image/svg+xml;base64,' . base64_encode($svgData);
+    }
+
     if (empty($firstName) || empty($email)) {
         $msg = '<div style="color:red">Nome e Email são obrigatórios.</div>';
     } else {
         try {
             if ($id) {
                 // UPDATE
+                // Nota: Não atualizamos a imagem aqui para não sobrescrever uma foto personalizada que o usuário já tenha.
                 $sql = "UPDATE users SET firstName = :fn, lastName = :ln, email = :em, role = :rl, phone = :ph, cpf = :cpf WHERE id = :id";
                 $params = [
                     ':fn' => $firstName, ':ln' => $lastName, ':em' => $email, 
@@ -75,13 +86,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $msg = '<div style="color:red">Senha é obrigatória para novos usuários.</div>';
                 } else {
                     $hash = password_hash($password, PASSWORD_DEFAULT);
-                    $sql = "INSERT INTO users (firstName, lastName, email, password_hash, role, phone, cpf, created_at) 
-                            VALUES (:fn, :ln, :em, :pass, :rl, :ph, :cpf, NOW())";
+                    
+                    // Adicionado campo 'profilePicture' na query
+                    $sql = "INSERT INTO users (firstName, lastName, email, password_hash, role, phone, cpf, profilePicture, created_at) 
+                            VALUES (:fn, :ln, :em, :pass, :rl, :ph, :cpf, :pic, NOW())";
                     
                     $stmt = $pdo->prepare($sql);
                     $stmt->execute([
-                        ':fn' => $firstName, ':ln' => $lastName, ':em' => $email, 
-                        ':pass' => $hash, ':rl' => $role, ':ph' => $phone, ':cpf' => $cpf
+                        ':fn' => $firstName, 
+                        ':ln' => $lastName, 
+                        ':em' => $email, 
+                        ':pass' => $hash, 
+                        ':rl' => $role, 
+                        ':ph' => $phone, 
+                        ':cpf' => $cpf,
+                        ':pic' => $base64Image // Salva na coluna profilePicture
                     ]);
                     
                     $msg = '<div style="color:green; margin-bottom:15px; padding: 10px; background: #dff0d8; border-radius: 4px;">Usuário criado com sucesso! <a href="users.php">Voltar para lista</a></div>';
