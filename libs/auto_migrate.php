@@ -1,92 +1,85 @@
 <?php
 /**
  * libs/auto_migrate.php
- * Sistema de Atualização Inteligente (Verifica package.json)
+ * Sistema de Atualização (Retorno JSON para Modal)
  */
 
+// Limpa qualquer output anterior para não quebrar o JSON
+ob_start();
+
 set_time_limit(300);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0); // Desliga erros na tela (vão pro log)
 error_reporting(E_ALL);
 
-// --- CONFIGURAÇÕES DO GITHUB ---
+header('Content-Type: application/json; charset=utf-8');
+
+// --- CONFIGURAÇÕES ---
 define('GITHUB_USER',   'nyshimura');      
 define('GITHUB_REPO',   'sge');  
 define('GITHUB_BRANCH', 'main');             
-define('GITHUB_TOKEN',  '');                 // Necessário para ler repositórios privados
-// ---------------------------------------------
+define('GITHUB_TOKEN',  '');                 
 
-// Ajuste de conexão para rodar em /libs/
-if (!isset($conn)) {
-    if (file_exists(__DIR__ . '/../config/database.php')) {
-        require_once __DIR__ . '/../config/database.php';
-        if (isset($pdo) && !isset($conn)) $conn = $pdo;
-    }
+// Ajuste de conexão
+$conn = null;
+if (file_exists(__DIR__ . '/../config/database.php')) {
+    require_once __DIR__ . '/../config/database.php';
+    if (isset($pdo)) $conn = $pdo;
 }
 
-// ==============================================================================
-// FUNÇÕES DE VERSÃO (NOVO)
-// ==============================================================================
+$response = [
+    'success' => false,
+    'logs' => [],
+    'version_local' => '0.0.0',
+    'version_remote' => '---'
+];
+
+function addLog(&$resp, $msg, $type = 'info') {
+    // Tipos: info, success, warning, error
+    $resp['logs'][] = ['msg' => $msg, 'type' => $type];
+}
+
+// ... (Funções auxiliares: getLocalVersion, getRemoteVersion, downloadAndExtract, recursiveCopy, cleanupTemp) ...
+// VOU RESUMIR AS FUNÇÕES AQUI MANTENDO A LÓGICA, MAS ADAPTANDO PARA O ARRAY DE LOGS
 
 function getLocalVersion() {
     $path = __DIR__ . '/../package.json';
     if (!file_exists($path)) return '0.0.0';
-    
     $json = json_decode(file_get_contents($path), true);
     return $json['version'] ?? '0.0.0';
 }
 
-function getRemoteVersion(&$logs) {
-    // URL do arquivo cru (Raw) no GitHub
+function getRemoteVersion() {
     $url = "https://raw.githubusercontent.com/" . GITHUB_USER . "/" . GITHUB_REPO . "/" . GITHUB_BRANCH . "/package.json";
-    
     $opts = ['http' => ['method' => 'GET', 'header' => ['User-Agent: PHP-Updater']]];
     if (!empty(GITHUB_TOKEN)) {
-        // Para repos privados, a URL muda para API e o header é obrigatório
         $url = "https://api.github.com/repos/" . GITHUB_USER . "/" . GITHUB_REPO . "/contents/package.json?ref=" . GITHUB_BRANCH;
         $opts['http']['header'][] = "Authorization: token " . GITHUB_TOKEN;
-        $opts['http']['header'][] = "Accept: application/vnd.github.v3.raw"; // Pede o conteúdo raw
+        $opts['http']['header'][] = "Accept: application/vnd.github.v3.raw";
     }
-
     $context = stream_context_create($opts);
     $content = @file_get_contents($url, false, $context);
-    
-    if (!$content) {
-        $logs[] = "⚠️ Não foi possível ler o package.json remoto (GitHub).";
-        return null;
-    }
-
+    if (!$content) return null;
     $json = json_decode($content, true);
     return $json['version'] ?? null;
 }
 
-// ==============================================================================
-// ATUALIZAÇÃO DE ARQUIVOS
-// ==============================================================================
-
-function downloadAndExtractUpdate(&$logs) {
-    // 1. VERIFICAÇÃO DE VERSÃO
+function downloadAndExtractUpdate(&$resp) {
+    // 1. Verificação
     $localVer = getLocalVersion();
-    $remoteVer = getRemoteVersion($logs);
-
-    $logs[] = "🔍 Versão Local: <strong>$localVer</strong>";
+    $remoteVer = getRemoteVersion();
     
+    $resp['version_local'] = $localVer;
+    $resp['version_remote'] = $remoteVer ?: 'Erro ao ler';
+
     if ($remoteVer) {
-        $logs[] = "🔍 Versão GitHub: <strong>$remoteVer</strong>";
-        
-        // Se a versão remota NÃO for maior que a local, avisa mas permite forçar
-        if (version_compare($remoteVer, $localVer, '<=')) {
-            if (!isset($_GET['force'])) {
-                $logs[] = "✅ O sistema já está atualizado. (Use ?action=update_system&force=1 para reinstalar)";
-                return false;
-            } else {
-                $logs[] = "⚠️ Reinstalando versão mesmo estando atualizado (Modo Forçado).";
-            }
-        } else {
-            $logs[] = "✨ <strong>Nova atualização disponível! Iniciando...</strong>";
+        if (version_compare($remoteVer, $localVer, '<=') && !isset($_GET['force'])) {
+            addLog($resp, "Sistema já está atualizado (v$localVer).", 'success');
+            return true; 
         }
+        addLog($resp, "Nova versão detectada: v$remoteVer. Iniciando...", 'info');
     }
 
-    // 2. DOWNLOAD E EXTRAÇÃO (Código original mantido)
+    // 2. Download
     $zipUrl = "https://github.com/" . GITHUB_USER . "/" . GITHUB_REPO . "/archive/refs/heads/" . GITHUB_BRANCH . ".zip";
     $tempZip = __DIR__ . '/update_temp.zip';
     $extractPath = __DIR__ . '/update_temp_folder';
@@ -98,12 +91,13 @@ function downloadAndExtractUpdate(&$logs) {
     $fileContent = @file_get_contents($zipUrl, false, $context);
 
     if (!$fileContent) {
-        $logs[] = "❌ Falha no download do ZIP.";
+        addLog($resp, "Falha no download do ZIP.", 'error');
         return false;
     }
-
     file_put_contents($tempZip, $fileContent);
-    
+    addLog($resp, "Download concluído.", 'info');
+
+    // 3. Extração
     $zip = new ZipArchive;
     if ($zip->open($tempZip) === TRUE) {
         if (!is_dir($extractPath)) mkdir($extractPath, 0755, true);
@@ -121,35 +115,32 @@ function downloadAndExtractUpdate(&$logs) {
 
         if ($sourceRoot) {
             $systemRoot = realpath(__DIR__ . '/../');
-            recursiveCopy($sourceRoot, $systemRoot, $logs);
-            $logs[] = "🚀 Sistema atualizado para v$remoteVer!";
+            recursiveCopy($sourceRoot, $systemRoot, $resp);
+            addLog($resp, "Arquivos atualizados com sucesso!", 'success');
         } else {
-            $logs[] = "❌ Erro: Estrutura do ZIP inválida.";
+            addLog($resp, "Erro: Estrutura do ZIP inválida.", 'error');
         }
         cleanupTemp($tempZip, $extractPath);
         return true;
     } else {
-        $logs[] = "❌ Erro ao abrir ZIP.";
+        addLog($resp, "Erro ao abrir ZIP.", 'error');
         return false;
     }
 }
 
-function recursiveCopy($src, $dst, &$logs) {
+function recursiveCopy($src, $dst, &$resp) {
     $dir = opendir($src);
     @mkdir($dst);
     while (($file = readdir($dir))) {
         if (($file != '.') && ($file != '..')) {
             $srcPath = $src . '/' . $file;
             $dstPath = $dst . '/' . $file;
-            
-            // Protege o Database Config
             if (strpos($dstPath, 'config/database.php') !== false) {
-                // $logs[] = "🛡️ Ignorado: config/database.php"; // Comentei para não poluir log
+                // addLog($resp, "Protegido: database.php", 'warning'); // Opcional logar
                 continue;
             }
-
             if (is_dir($srcPath)) {
-                recursiveCopy($srcPath, $dstPath, $logs);
+                recursiveCopy($srcPath, $dstPath, $resp);
             } else {
                 copy($srcPath, $dstPath);
             }
@@ -173,62 +164,68 @@ function deleteDirectory($dir) {
     return rmdir($dir);
 }
 
-// ==============================================================================
-// MIGRAÇÃO DE BANCO (Mantida igual)
-// ==============================================================================
+// Função Banco
 function checkAndAddColumn($conn, $table, $column, $sqlCommand) {
     try {
         $stmt = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
         if ($stmt->rowCount() == 0) {
             $conn->exec($sqlCommand);
-            return "✅ [DB] Coluna '$column' criada em '$table'.";
+            return "Coluna '$column' criada em '$table'.";
         }
         return null;
-    } catch (PDOException $e) { return "❌ [DB] Erro: " . $e->getMessage(); }
+    } catch (PDOException $e) { return "Erro DB ($table): " . $e->getMessage(); }
 }
 
-$migrations = [
-    ['table'=>'courses', 'column'=>'schedule_json', 'command'=>"ALTER TABLE courses ADD COLUMN schedule_json TEXT DEFAULT NULL"],
-    // ... (suas outras migrações aqui) ...
-];
+// --- EXECUÇÃO ---
 
-// ==============================================================================
-// EXECUÇÃO
-// ==============================================================================
-$logs = [];
+$action = $_GET['action'] ?? '';
 
-// Ação de Atualizar Arquivos
-if (isset($_GET['action']) && $_GET['action'] == 'update_system') {
-    downloadAndExtractUpdate($logs);
-}
-
-// Ação de Migrar Banco
-if (isset($conn)) {
-    foreach ($migrations as $mig) {
-        $res = checkAndAddColumn($conn, $mig['table'], $mig['column'], $mig['command']);
-        if ($res) $logs[] = $res;
+try {
+    // 1. Atualizar Arquivos
+    if ($action == 'update_system') {
+        addLog($response, "Iniciando atualização de arquivos...", 'info');
+        downloadAndExtractUpdate($response);
     }
-}
 
-// HTML OUTPUT
-if (basename($_SERVER['PHP_SELF']) == 'auto_migrate.php') {
-    echo "<body style='font-family:sans-serif; background:#f4f6f9; padding:20px;'>";
-    echo "<div style='max-width:800px; margin:0 auto; background:white; padding:20px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);'>";
-    echo "<h2 style='color:#2c3e50; border-bottom:2px solid #eee; padding-bottom:10px;'>Status da Atualização</h2>";
-    
-    if (empty($logs)) {
-        echo "<p style='color:#27ae60;'><strong>Sistema sincronizado.</strong> Banco de dados OK.</p>";
-        // Mostra versão atual se não houver logs
-        $v = getLocalVersion();
-        echo "<p style='color:#7f8c8d; font-size:0.9em;'>Versão Atual: v$v</p>";
+    // 2. Migrar Banco (Sempre roda se houver conexão)
+    if ($conn) {
+        addLog($response, "Verificando banco de dados...", 'info');
+        
+        $migrations = [
+            ['table'=>'courses', 'column'=>'schedule_json', 'command'=>"ALTER TABLE courses ADD COLUMN schedule_json TEXT DEFAULT NULL"],
+            ['table'=>'users', 'column'=>'phone', 'command'=>"ALTER TABLE `users` ADD COLUMN `phone` VARCHAR(20) DEFAULT NULL"],
+            ['table'=>'courses', 'column'=>'closed_date', 'command'=>"ALTER TABLE courses ADD COLUMN closed_date DATETIME DEFAULT NULL"],
+            ['table'=>'enrollments', 'column'=>'customDueDay', 'command'=>"ALTER TABLE `enrollments` ADD COLUMN `customDueDay` int(2) DEFAULT NULL"],
+            ['table'=>'payments', 'column'=>'reminderSent', 'command'=>"ALTER TABLE `payments` ADD COLUMN `reminderSent` tinyint(1) NOT NULL DEFAULT 0"],
+            ['table'=>'system_settings', 'column'=>'email_reminder_subject', 'command'=>"ALTER TABLE `system_settings` ADD COLUMN `email_reminder_subject` varchar(255) DEFAULT 'Lembrete'"],
+            ['table'=>'system_settings', 'column'=>'email_reminder_body', 'command'=>"ALTER TABLE `system_settings` ADD COLUMN `email_reminder_body` text DEFAULT NULL"],
+            ['table'=>'system_settings', 'column'=>'reminderDaysBefore', 'command'=>"ALTER TABLE `system_settings` ADD COLUMN `reminderDaysBefore` int(11) NOT NULL DEFAULT 3"]
+        ];
+
+        foreach ($migrations as $mig) {
+            $res = checkAndAddColumn($conn, $mig['table'], $mig['column'], $mig['command']);
+            if ($res) addLog($response, $res, 'success');
+        }
+        
+        // Template
+        $chk = $conn->query("SELECT email_reminder_body FROM system_settings WHERE id=1");
+        if ($chk && $chk->fetchColumn() === null) {
+            $defaultBody = 'Olá {{aluno_nome}},\n\nSua mensalidade vence em {{vencimento}}.\nValor: {{valor}}';
+            $conn->exec("UPDATE system_settings SET email_reminder_body='$defaultBody' WHERE id=1");
+            addLog($response, "Template de e-mail padrão inserido.", 'success');
+        }
     } else {
-        echo "<div style='background:#2d3436; color:#dfe6e9; padding:15px; border-radius:5px; overflow:auto; max-height:500px;'>";
-        foreach($logs as $log) echo "<div>$log</div>";
-        echo "</div>";
+        addLog($response, "Sem conexão com Banco de Dados.", 'error');
     }
-    
-    echo "<div style='margin-top:20px; text-align:right;'>";
-    echo "<a href='../admin/system_settings.php' style='display:inline-block; padding:10px 20px; background:#3498db; color:white; text-decoration:none; border-radius:5px; font-weight:bold;'>Voltar</a>";
-    echo "</div></div></body>";
+
+    $response['success'] = true;
+
+} catch (Exception $e) {
+    addLog($response, "Erro Fatal: " . $e->getMessage(), 'error');
 }
+
+// Limpa buffer e envia JSON
+ob_end_clean();
+echo json_encode($response);
+exit;
 ?>
