@@ -380,22 +380,18 @@ function renderToolbar($targetId) {
                 <i class="fas fa-sync-alt"></i> Atualização do Sistema
             </h4>
             <p style="color: #666; font-size: 0.9rem; margin-bottom: 15px;">
-                Esta ferramenta verifica a versão no GitHub e atualiza os arquivos do sistema se necessário, 
-                <strong>preservando</strong> seu banco de dados e o arquivo <code>config/database.php</code>.
+                Verifica atualizações no GitHub e sincroniza o banco de dados. 
+                <strong>config/database.php</strong> é preservado.
             </p>
 
             <div style="display: flex; gap: 10px; align-items: center;">
-                <a href="../libs/auto_migrate.php" target="_blank" class="btn-secondary" style="text-decoration: none; padding: 10px 15px; border-radius: 4px; border:1px solid #ccc; background:#fff; color:#333; display: flex; align-items: center; gap: 5px;">
-                    <i class="fas fa-database"></i> <span>Verificar Banco de Dados</span>
-                </a>
+                
 
-                <a href="../libs/auto_migrate.php?action=update_system" 
-                   onclick="return confirm('ATENÇÃO: Isso irá comparar a versão local com a do GitHub e atualizar os arquivos se necessário. O arquivo config/database.php será preservado. Deseja continuar?');" 
-                   target="_blank" 
-                   class="btn-primary" 
-                   style="text-decoration: none; padding: 10px 15px; border-radius: 4px; background-color: #6f42c1; color: white; font-weight: bold; display: flex; align-items: center; gap: 5px;">
+
+                <button type="button" onclick="openMigrationModal('update_system')" class="btn-primary" style="background-color: #6f42c1; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px;">
                     <i class="fab fa-github"></i> <span>Buscar Atualizações (GitHub)</span>
-                </a>
+                </button>
+
             </div>
         </div>
     </div>
@@ -461,6 +457,35 @@ function renderToolbar($targetId) {
         </div>
     </div>
 
+</div>
+
+<div id="migrationModal" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="modal-card" style="width: 600px; max-width: 90%; background: #2d3436; color: #dfe6e9; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #636e72;">
+            <h3 style="margin: 0; color: #00cec9; font-family: monospace;">
+                <i class="fas fa-terminal"></i> System Updater
+            </h3>
+            <button onclick="closeMigrationModal()" style="background: none; border: none; color: #ff7675; font-size: 1.2rem; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div id="migrationContent" style="height: 300px; overflow-y: auto; padding: 15px; font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.5;">
+            <div style="text-align: center; margin-top: 100px;">
+                <i class="fas fa-circle-notch fa-spin fa-2x"></i><br>Inicializando...
+            </div>
+        </div>
+
+        <div class="modal-footer" style="padding-top: 15px; border-top: 1px solid #636e72; text-align: right;">
+            <button id="btnForceUpdate" onclick="runMigration('update_system', true)" style="display: none; background: #e67e22; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-right: 10px;">
+                <i class="fas fa-sync"></i> Forçar Reinstalação
+            </button>
+            <button onclick="closeMigrationModal()" class="btn-primary" style="background: #00cec9; border: none; color: #2d3436; font-weight: bold;">
+                Fechar
+            </button>
+        </div>
+    </div>
 </div>
 
 <div id="renewConfirmModal" class="modal-overlay" style="display: none; animation: fadeIn 0.3s;">
@@ -559,12 +584,6 @@ function closeRenewModal() {
     document.getElementById('renewConfirmModal').style.display = 'none';
 }
 function confirmRenewSubmission() {
-    // Como o form está dentro da aba, precisamos submeter manualmente
-    // Criamos um form temporário ou usamos o ID se o HTML estiver correto.
-    // O seu código original tinha um <form id="renewForm"> dentro de outro <form>. 
-    // Isso é HTML inválido e pode causar erro.
-    // CORREÇÃO: Vamos submeter o form principal adicionando o campo hidden dinamicamente.
-    
     var form = document.querySelector('form[action=""]'); 
     // Removemos input anterior se houver
     var oldInput = document.getElementById('temp_action_input');
@@ -584,6 +603,85 @@ function confirmRenewSubmission() {
     form.appendChild(yearInput);
 
     form.submit();
+}
+
+// --- LÓGICA DO MODAL DE MIGRAÇÃO ---
+
+function openMigrationModal(action) {
+    const modal = document.getElementById('migrationModal');
+    const content = document.getElementById('migrationContent');
+    const btnForce = document.getElementById('btnForceUpdate');
+    
+    modal.style.display = 'flex';
+    btnForce.style.display = 'none'; // Esconde botão forçar inicialmente
+    
+    // Mostra loading
+    content.innerHTML = '<div style="text-align: center; margin-top: 100px; color: #00cec9;"><i class="fas fa-circle-notch fa-spin fa-3x"></i><br><br>Processando... Por favor, aguarde.</div>';
+
+    // Chama a função real
+    runMigration(action, false);
+}
+
+function closeMigrationModal() {
+    document.getElementById('migrationModal').style.display = 'none';
+}
+
+function runMigration(action, force) {
+    let url = '../libs/auto_migrate.php?json=1';
+    if (action === 'update_system') url += '&action=update_system';
+    if (force) url += '&force=1';
+
+    const content = document.getElementById('migrationContent');
+
+    fetch(url)
+    .then(response => response.json())
+    .then(data => {
+        content.innerHTML = ''; // Limpa loading
+        
+        // Cabeçalho de Versão
+        if (data.version_local) {
+            content.innerHTML += `<div style="margin-bottom: 10px; border-bottom: 1px dashed #555; padding-bottom: 5px;">
+                Local: <span style="color: #fab1a0">${data.version_local}</span> | 
+                GitHub: <span style="color: #55efc4">${data.version_remote}</span>
+            </div>`;
+        }
+
+        // Renderiza Logs
+        if (data.logs && data.logs.length > 0) {
+            data.logs.forEach(log => {
+                let color = '#dfe6e9'; // Default white
+                let icon = '•';
+                
+                if (log.type === 'success') { color = '#55efc4'; icon = '✓'; }
+                if (log.type === 'error')   { color = '#ff7675'; icon = '✗'; }
+                if (log.type === 'warning') { color = '#ffeaa7'; icon = '!'; }
+                if (log.type === 'info')    { color = '#74b9ff'; icon = 'ℹ'; }
+
+                content.innerHTML += `<div style="color: ${color}; margin-bottom: 3px;">
+                    <span style="opacity:0.7; margin-right:5px;">${icon}</span> ${log.msg}
+                </div>`;
+            });
+        } else {
+            content.innerHTML += '<div style="color: #fab1a0">Nenhum log retornado.</div>';
+        }
+
+        // Verifica se precisa mostrar botão de Forçar
+        if (action === 'update_system' && !force) {
+            const isUpdated = data.logs.some(l => l.msg.includes('já está atualizado'));
+            if (isUpdated) {
+                document.getElementById('btnForceUpdate').style.display = 'inline-block';
+            }
+        }
+        
+        content.scrollTop = content.scrollHeight;
+
+    })
+    .catch(error => {
+        content.innerHTML = `<div style="color: #ff7675; text-align: center; margin-top: 50px;">
+            <i class="fas fa-exclamation-triangle fa-2x"></i><br><br>
+            Erro na comunicação com o servidor:<br>${error}
+        </div>`;
+    });
 }
 </script>
 
