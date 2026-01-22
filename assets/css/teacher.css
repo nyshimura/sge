@@ -1,0 +1,152 @@
+/* assets/css/teacher.css - TEMA PROFESSOR (ROXO) MOBILE FIRST */
+
+:root {
+    --primary-color: #8e44ad; /* Roxo Wisteria */
+    --secondary-color: #732d91; /* Roxo Escuro */
+    --accent-color: #9b59b6;
+    --text-color: #333;
+    --bg-color: #f3f0f5; /* Fundo levemente lilás/cinza */
+    --sidebar-width: 250px;
+}
+
+/* --- BASE --- */
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+
+/* --- SCROLLBAR ROXA --- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background-color: #c0a3d6; border-radius: 4px; border: none; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--primary-color); }
+
+/* --- SIDEBAR --- */
+.sidebar { width: var(--sidebar-width); background-color: white; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100%; }
+.sidebar-header { padding: 25px; text-align: center; font-weight: bold; font-size: 1.2rem; color: var(--primary-color); border-bottom: 1px solid #eee; }
+.sidebar-menu { list-style: none; padding: 20px 0; margin: 0; flex-grow: 1; overflow-y: auto; }
+.sidebar-menu a { display: flex; align-items: center; padding: 12px 25px; color: #555; text-decoration: none; transition: 0.2s; font-weight: 500; border-left: 4px solid transparent; }
+.sidebar-menu a:hover, .sidebar-menu a.active { background-color: #f4ecf7; color: var(--primary-color); border-left-color: var(--primary-color); }
+.sidebar-menu a i { width: 25px; margin-right: 10px; text-align: center; }
+.mobile-logout { display: none; }
+
+/* --- LAYOUT PRINCIPAL --- */
+.main-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.top-bar { background: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex-shrink: 0; z-index: 5; }
+.content-wrapper { padding: 0; width: 100%; box-sizing: border-box; overflow-y: auto; height: 100%; }
+.page-container { padding: 30px; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box; }
+
+/* --- COMPONENTES --- */
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; margin-top: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+.section-title { font-size: 1.3rem; font-weight: 700; color: #2c3e50; margin: 0; }
+.card-box { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); margin-bottom: 20px; border: 1px solid #eee; }
+
+/* Botões */
+.btn-primary { background-color: var(--primary-color); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; font-weight: 600; transition: 0.2s; text-align: center; }
+.btn-primary:hover { background-color: var(--secondary-color); transform: translateY(-1px); }
+
+/* Stats Grid (Igual do Aluno, só muda ícones) */
+.dashboard-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; margin-bottom: 30px; }
+.stat-card { background: #fff; padding: 20px; border-radius: 12px; display: flex; align-items: center; gap: 20px; border: 1px solid #eee; transition: 0.2s; }
+.stat-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+.stat-icon { width: 60px; height: 60px; background: #f4ecf7; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; color: var(--primary-color); }
+.stat-info p { margin: 0; font-size: 1.5rem; font-weight: bold; color: #333; }
+
+/* Cards de Curso do Professor */
+.teacher-course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 25px; }
+.teacher-course-card { background: #fff; border-radius: 12px; border: 1px solid #eee; overflow: hidden; transition: 0.2s; display: flex; flex-direction: column; }
+.teacher-course-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); border-color: #d2b4de; }
+.tcc-header { padding: 20px; background: #fcfbfd; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+.tcc-body { padding: 20px; flex-grow: 1; }
+.tcc-actions { padding: 15px 20px; background: #fff; border-top: 1px solid #eee; display: flex; gap: 10px; }
+.btn-action { flex: 1; padding: 8px; border-radius: 6px; text-align: center; text-decoration: none; font-size: 0.9rem; font-weight: 600; border: 1px solid transparent; transition: 0.2s; }
+.btn-outline { border-color: #ddd; color: #666; background: #fff; }
+.btn-outline:hover { background: #f9f9f9; color: var(--primary-color); border-color: var(--primary-color); }
+.btn-fill { background: var(--primary-color); color: white; }
+.btn-fill:hover { background: var(--secondary-color); }
+
+/* --- MOBILE FIRST (MENU RODAPÉ) --- */
+@media (max-width: 768px) {
+    body { flex-direction: column; overflow: auto; }
+    
+    .sidebar { 
+        width: 100%; height: auto; border-right: none; 
+        position: fixed; bottom: 0; left: 0; z-index: 1000; 
+        background: white; border-top: 1px solid #eee; 
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.05); 
+    }
+    
+    .sidebar-header { display: none; }
+    
+    .sidebar-menu { 
+        display: flex; flex-direction: row; padding: 15px; 
+        overflow-x: auto; white-space: nowrap; gap: 10px; 
+    }
+    .sidebar-menu::-webkit-scrollbar { display: none; }
+    
+    .sidebar-menu a { 
+        padding: 10px 20px; border-radius: 50px; background: #f8f9fa; 
+        border: 1px solid #eee; color: #666; font-size: 0.9rem; 
+    }
+    .sidebar-menu a.active { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+    .sidebar-menu a i { margin-right: 8px; }
+    .mobile-logout { display: block; }
+    
+    .main-content { overflow: visible; height: auto; }
+    .page-container { padding: 20px 15px 100px 15px; } /* Espaço para o menu */
+    
+    .user-info { display: none; }
+    .top-bar { justify-content: center; }
+}
+
+/* assets/css/teacher.css - HEADER DO PERFIL */
+
+/* Container do Usuário */
+.user-info {
+    display: flex;
+    align-items: center;
+}
+
+/* Link do Perfil (Imagem + Nome) */
+.user-profile-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.user-profile-link:hover { opacity: 0.8; }
+
+/* Imagem Redonda */
+.header-avatar {
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #e0e0e0;
+    background-color: #f1f2f6;
+}
+
+/* Nome: Escondido no Mobile, Visível no Desktop */
+.header-user-name {
+    display: none; /* Mobile First: Oculto */
+    font-size: 0.9rem;
+    color: #555;
+}
+
+/* Botão Sair */
+.header-logout {
+    margin-left: 15px;
+    color: #e74c3c;
+    text-decoration: none;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+}
+
+/* Media Query: Tablet/Desktop - Mostra o nome */
+@media (min-width: 768px) {
+    .header-user-name {
+        display: block; 
+    }
+}
+
