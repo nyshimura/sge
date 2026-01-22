@@ -1,0 +1,28 @@
+[2026-01-21 01:03:11] ------------------------------------------------
+[2026-01-21 01:03:11] Notification Received. Payment ID MP: 142214102057
+[2026-01-21 01:03:11] Status MP: pending | Ref Local: 526
+[2026-01-21 01:03:46] ------------------------------------------------
+[2026-01-21 01:03:46] Notification Received. Payment ID MP: 142214102057
+[2026-01-21 01:03:46] Status MP: approved | Ref Local: 526
+[2026-01-21 01:03:46] SUCCESS: Payment #526 cleared.
+[2026-01-21 04:43:35] ------------------------------------------------
+[2026-01-21 04:43:35] Notification Received. Payment ID MP: 142226482557
+[2026-01-21 04:43:36] Status MP: pending | Ref Local: Isabel Nishimura Abreu
+[2026-01-21 04:46:13] ------------------------------------------------
+[2026-01-21 04:46:13] Notification Received. Payment ID MP: 142222371757
+[2026-01-21 04:46:13] Status MP: pending | Ref Local: Isabel Nishimura Abreu
+[2026-01-21 04:49:01] ------------------------------------------------
+[2026-01-21 04:49:01] Notification Received. Payment ID MP: 142225788873
+[2026-01-21 04:49:01] Status MP: pending | Ref Local: Isabel Nishimura Abreu
+[2026-01-21 05:16:08] ------------------------------------------------
+[2026-01-21 05:16:08] Notification Received. Payment ID MP: 142224243751
+[2026-01-21 05:16:08] Status MP: pending | Ref Local: 525
+[2026-01-21 05:25:41] ------------------------------------------------
+[2026-01-21 05:25:41] Notification Received. Payment ID MP: 142225819495
+[2026-01-21 05:25:42] Status MP: pending | Ref Local: 525
+[2026-01-21 22:57:59] ------------------------------------------------
+[2026-01-21 22:57:59] Notification Received. Payment ID MP: 143015919962
+[2026-01-21 22:57:59] Status MP: pending | Ref Local: 525
+[2026-01-22 00:25:56] ------------------------------------------------
+[2026-01-22 00:25:56] Notification Received. Payment ID MP: 142883914742
+[2026-01-22 00:25:56] Status MP: cancelled | Ref Local: 525
