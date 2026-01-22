@@ -43,8 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // C. GERAR NOVO ANO LETIVO
     elseif (isset($_POST['action']) && $_POST['action'] === 'generate_year') {
         $targetYear = (int)$_POST['renew_year'];
-        
-        // Armazena o resultado no array específico para o MODAL (não usa $msg)
         $renewalResult = generateAnnualInvoices($pdo, $targetYear);
     }
 
@@ -134,6 +132,7 @@ function renderToolbar($targetId) {
         <button class="settings-tab-link" onclick="openTab(event, 'tab-docs')"><i class="fas fa-file-contract"></i> Docs</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-fin')"><i class="fas fa-wallet"></i> Financeiro</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-api')"><i class="fas fa-plug"></i> Integrações</button>
+        <button class="settings-tab-link" onclick="openTab(event, 'tab-system')"><i class="fas fa-sync"></i> Sistema</button>
     </div>
 
     <form method="POST" action="" enctype="multipart/form-data">
@@ -321,7 +320,8 @@ function renderToolbar($targetId) {
                     <button type="submit" class="btn-save btn-primary">Salvar Financeiro</button>
                 </div>
             </div>
-    </form> <div class="section-block highlight-card" style="margin-top: 20px;">
+            
+            <div class="section-block highlight-card" style="margin-top: 20px;">
                 <h4 class="section-title" style="color:#2c3e50; display:flex; align-items:center; gap:10px;">
                     <i class="fas fa-calendar-plus" style="color: #3498db;"></i> Ferramentas de Renovação
                 </h4>
@@ -331,24 +331,25 @@ function renderToolbar($targetId) {
                     <br><i class="fas fa-info-circle" style="color:#3498db;"></i> O sistema verifica mês a mês e <b>não duplica</b> cobranças existentes.
                 </p>
 
-                <form id="renewForm" method="POST">
+                <div id="renewFormSection">
                     <input type="hidden" name="action" value="generate_year">
                     
                     <div style="display: flex; gap: 10px; align-items: flex-end; max-width: 400px;">
                         <div style="flex: 1;">
                             <label style="font-weight: bold; font-size: 0.85rem;">Ano de Referência</label>
-                            <input type="number" name="renew_year" class="form-control" value="<?php echo date('Y') + 1; ?>" min="2024" max="2050">
+                            <input type="number" id="renew_year_input" name="renew_year" class="form-control" value="<?php echo date('Y') + 1; ?>" min="2024" max="2050">
                         </div>
                         <button type="button" class="btn-generate" onclick="openRenewModal()">
                             Processar <i class="fas fa-arrow-right"></i>
                         </button>
                     </div>
-                </form>
+                </div>
             </div>
-
         </div>
+    </form>
 
-        <div id="tab-api" class="tab-content">
+    <div id="tab-api" class="tab-content">
+        <form method="POST">
             <div class="section-block">
                 <h4 class="section-title"><i class="fas fa-brain"></i> IA (Google Gemini)</h4>
                 <div class="settings-grid">
@@ -370,7 +371,34 @@ function renderToolbar($targetId) {
                     <button type="submit" class="btn-save btn-primary">Salvar Integrações</button>
                 </div>
             </div>
+        </form>
+    </div>
+
+    <div id="tab-system" class="tab-content">
+        <div class="section-block" style="border-left: 4px solid #6f42c1; background-color: #f9f2ff;">
+            <h4 class="section-title" style="color: #6f42c1;">
+                <i class="fas fa-sync-alt"></i> Atualização do Sistema
+            </h4>
+            <p style="color: #666; font-size: 0.9rem; margin-bottom: 15px;">
+                Esta ferramenta verifica a versão no GitHub e atualiza os arquivos do sistema se necessário, 
+                <strong>preservando</strong> seu banco de dados e o arquivo <code>config/database.php</code>.
+            </p>
+
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <a href="../libs/auto_migrate.php" target="_blank" class="btn-secondary" style="text-decoration: none; padding: 10px 15px; border-radius: 4px; border:1px solid #ccc; background:#fff; color:#333; display: flex; align-items: center; gap: 5px;">
+                    <i class="fas fa-database"></i> <span>Verificar Banco de Dados</span>
+                </a>
+
+                <a href="../libs/auto_migrate.php?action=update_system" 
+                   onclick="return confirm('ATENÇÃO: Isso irá comparar a versão local com a do GitHub e atualizar os arquivos se necessário. O arquivo config/database.php será preservado. Deseja continuar?');" 
+                   target="_blank" 
+                   class="btn-primary" 
+                   style="text-decoration: none; padding: 10px 15px; border-radius: 4px; background-color: #6f42c1; color: white; font-weight: bold; display: flex; align-items: center; gap: 5px;">
+                    <i class="fab fa-github"></i> <span>Buscar Atualizações (GitHub)</span>
+                </a>
+            </div>
         </div>
+    </div>
 
     <div id="tab-calendario" class="tab-content">
         <div class="section-block">
@@ -531,7 +559,31 @@ function closeRenewModal() {
     document.getElementById('renewConfirmModal').style.display = 'none';
 }
 function confirmRenewSubmission() {
-    document.getElementById('renewForm').submit();
+    // Como o form está dentro da aba, precisamos submeter manualmente
+    // Criamos um form temporário ou usamos o ID se o HTML estiver correto.
+    // O seu código original tinha um <form id="renewForm"> dentro de outro <form>. 
+    // Isso é HTML inválido e pode causar erro.
+    // CORREÇÃO: Vamos submeter o form principal adicionando o campo hidden dinamicamente.
+    
+    var form = document.querySelector('form[action=""]'); 
+    // Removemos input anterior se houver
+    var oldInput = document.getElementById('temp_action_input');
+    if(oldInput) oldInput.remove();
+    
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'action';
+    input.value = 'generate_year';
+    input.id = 'temp_action_input';
+    form.appendChild(input);
+
+    var yearInput = document.createElement('input');
+    yearInput.type = 'hidden';
+    yearInput.name = 'renew_year';
+    yearInput.value = document.getElementById('renew_year_input').value;
+    form.appendChild(yearInput);
+
+    form.submit();
 }
 </script>
 
