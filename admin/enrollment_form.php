@@ -108,14 +108,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !i
     $finalFee = $baseFee;
     $customFeeToSave = null; 
 
-    // Lógica de Prioridade: Valor Manual > Desconto % > Valor Base
-    if ($inputFee > 0 && abs($inputFee - $baseFee) > 0.01 && $scholarship == 0) {
+    // Lógica de Prioridade: Se o usuário preencheu o VALOR, calculamos a bolsa com base nele.
+    // Se preencheu a BOLSA, calculamos o valor.
+    // No PHP, confiamos nos valores enviados, mas revalidamos a consistência.
+    
+    // Se o valor enviado for diferente do base, usamos ele como prioridade
+    if ($inputFee >= 0) {
         $finalFee = $inputFee;
         $customFeeToSave = $finalFee;
-    } elseif ($scholarship > 0) {
-        $discount = $baseFee * ($scholarship / 100);
-        $finalFee = max(0, $baseFee - $discount);
-        $customFeeToSave = $finalFee;
+        // Recalcula a bolsa para salvar porcentagem correta no banco (opcional, mas bom para consistência)
+        if ($baseFee > 0) {
+            $scholarship = (($baseFee - $finalFee) / $baseFee) * 100;
+        } else {
+            $scholarship = 0;
+        }
     }
 
     try {
@@ -142,25 +148,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !i
             cancelarMatricula($pdo, $sid, $cid, $finalFee);
         }
         elseif ($status == 'Aprovada') {
-            // Se tiver valor a pagar, gera boletos (usa a função inteligente em includes/enrollment_logic.php)
             if ($finalFee > 0.01) {
                 reativarMatricula($pdo, $sid, $cid, $finalFee, $dueDay, $startDay);
             } else {
-                // === CORREÇÃO BOLSA 100% ===
-                // Se o valor for 0, apaga APENAS as cobranças pendentes futuras (deste mês pra frente).
-                // O passado (mesmo que pendente) é mantido.
-                
+                // Bolsa 100% -> limpa futuro
                 $primeiroDiaMesAtual = date('Y-m-01');
-                
-                // Se a data de cobrança definida for futura, usa ela como corte. Senão, usa o mês atual.
                 $dataCorte = ($startDay > $primeiroDiaMesAtual) ? $startDay : $primeiroDiaMesAtual;
-
                 $del = $pdo->prepare("DELETE FROM payments WHERE studentId=:s AND courseId=:c AND status='Pendente' AND dueDate >= :cutoff");
                 $del->execute([':s'=>$sid, ':c'=>$cid, ':cutoff'=>$dataCorte]);
             }
         }
         elseif ($status === 'Pendente') {
-            // Se voltou para pendente, limpamos as cobranças futuras geradas
             $primeiroDiaMesAtual = date('Y-m-01');
             $del = $pdo->prepare("DELETE FROM payments WHERE studentId=:s AND courseId=:c AND status='Pendente' AND dueDate >= :cutoff");
             $del->execute([':s'=>$sid, ':c'=>$cid, ':cutoff'=>$primeiroDiaMesAtual]);
@@ -210,6 +208,8 @@ include '../includes/admin_header.php';
 checkRole(['admin', 'superadmin']);
 ?>
 
+<div id="toast" class="toast">Salvo com sucesso!</div>
+
 <div class="content-wrapper">
     <div class="card-box" style="max-width: 800px; margin: 0 auto 30px auto;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -218,7 +218,15 @@ checkRole(['admin', 'superadmin']);
         </div>
 
         <?php if (isset($error)): ?><div class="alert alert-danger"><?php echo $error; ?></div><?php endif; ?>
-        <?php if (isset($_GET['msg']) && $_GET['msg'] == 'canceled_fine'): ?><div class="alert alert-warning">Cancelado com multa gerada.</div><?php endif; ?>
+        <?php if (isset($_GET['msg'])): ?>
+            <script>
+                // Mostra o toast se vier mensagem via GET
+                document.addEventListener('DOMContentLoaded', function() {
+                    var msg = "<?php echo $_GET['msg'] == 'updated' ? 'Dados atualizados!' : ($_GET['msg'] == 'created' ? 'Matrícula criada!' : 'Operação realizada!'); ?>";
+                    showToast(msg);
+                });
+            </script>
+        <?php endif; ?>
 
         <form method="POST" id="mainEnrollmentForm">
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
@@ -278,16 +286,15 @@ checkRole(['admin', 'superadmin']);
                     <div style="display:flex; align-items:center;">
                         <input type="number" step="0.01" min="0" max="100" name="scholarshipPercentage" id="scholarshipInput" class="form-control" 
                                value="<?php echo $enrollment['scholarshipPercentage'] ?? '0'; ?>" 
-                               oninput="calculateFinalFee()">
-                        <span style="margin-left:5px;">%</span>
+                               oninput="calculateFromScholarship()"> <span style="margin-left:5px;">%</span>
                     </div>
                 </div>
                 <div>
                     <label>Valor Mensal (R$)</label>
                     <input type="number" step="0.01" name="customMonthlyFee" id="feeInput" class="form-control" 
                            value="<?php echo $enrollment['customMonthlyFee'] ?? ''; ?>" 
-                           readonly style="background-color: #f9f9f9; font-weight: bold;">
-                </div>
+                           style="background-color: #fff; font-weight: bold;"
+                           oninput="calculateFromFee()"> </div>
                 <div>
                     <label>Dia Vencimento</label>
                     <input type="number" min="1" max="31" name="customDueDay" class="form-control" value="<?php echo $enrollment['customDueDay'] ?? ''; ?>" placeholder="10">
@@ -509,10 +516,10 @@ checkRole(['admin', 'superadmin']);
         return 0;
     }
 
-    function calculateFinalFee() {
+    // Função 1: Mudou a BOLSA -> Calcula o VALOR
+    function calculateFromScholarship() {
         const basePrice = getBasePrice();
         
-        // CORREÇÃO CRÍTICA: Tratar vírgula como ponto
         let scholarStr = document.getElementById('scholarshipInput').value;
         scholarStr = scholarStr.toString().replace(',', '.');
         const scholarship = parseFloat(scholarStr) || 0;
@@ -523,11 +530,28 @@ checkRole(['admin', 'superadmin']);
             finalPrice = Math.max(0, basePrice - discount);
         }
         
-        // Atualiza o input de Valor Mensal
         document.getElementById('feeInput').value = finalPrice.toFixed(2);
     }
 
-    function updateBasePrice() { calculateFinalFee(); }
+    // Função 2: Mudou o VALOR -> Calcula a BOLSA
+    function calculateFromFee() {
+        const basePrice = getBasePrice();
+        if (basePrice <= 0) return; // Evita divisão por zero
+
+        let feeStr = document.getElementById('feeInput').value;
+        feeStr = feeStr.toString().replace(',', '.');
+        const fee = parseFloat(feeStr) || 0;
+
+        let scholarship = 0;
+        if (fee < basePrice) {
+            scholarship = ((basePrice - fee) / basePrice) * 100;
+        }
+
+        // Atualiza o input de Bolsa com 2 casas decimais
+        document.getElementById('scholarshipInput').value = scholarship.toFixed(2);
+    }
+
+    function updateBasePrice() { calculateFromScholarship(); }
 
     // Garante que o cálculo rode ao carregar a página
     window.addEventListener('DOMContentLoaded', () => {
@@ -536,11 +560,21 @@ checkRole(['admin', 'superadmin']);
             const option = select.querySelector('option[selected]');
             if (option) document.getElementById('hiddenBasePrice').value = option.getAttribute('data-price');
         }
-        calculateFinalFee();
+        // Não recalculamos ao carregar para não sobrescrever valores manuais existentes
+        // calculateFromScholarship(); 
     });
 
-    // --- MODAIS ---
-    // Intercepta mudança manual do Select para 'Cancelada'
+    // --- TOAST FEEDBACK ---
+    function showToast(message) {
+        var toast = document.getElementById("toast");
+        toast.innerText = message;
+        toast.className = "toast show";
+        setTimeout(function(){ toast.className = toast.className.replace("show", ""); }, 3000);
+    }
+
+    // --- MODAIS (CÓDIGO ANTERIOR) ---
+    // ... (Mantém a lógica dos modais de cancelamento e pagamento) ...
+    
     document.getElementById('mainEnrollmentForm').addEventListener('submit', function(event) {
         const select = document.getElementById('statusSelect');
         if (select.value === 'Cancelada') {
@@ -649,6 +683,33 @@ checkRole(['admin', 'superadmin']);
     .active-danger { background: #e74c3c !important; border-color: #e74c3c !important; }
     .active { background: #27ae60 !important; }
     
+    /* TOAST */
+    .toast {
+        visibility: hidden;
+        min-width: 250px;
+        background-color: #333;
+        color: #fff;
+        text-align: center;
+        border-radius: 4px;
+        padding: 16px;
+        position: fixed;
+        z-index: 10000;
+        left: 50%;
+        bottom: 30px;
+        transform: translateX(-50%);
+        font-size: 17px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+    .toast.show {
+        visibility: visible;
+        -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        animation: fadein 0.5s, fadeout 0.5s 2.5s;
+    }
+    @-webkit-keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+    @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+    @-webkit-keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+    @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+
     /* Modais */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; }
     .modal-card { background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; text-align: center; }
