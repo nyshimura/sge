@@ -40,14 +40,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } catch (PDOException $e) { $msg = '<div class="alert alert-danger">Erro: ' . $e->getMessage() . '</div>'; }
     }
 
-    // C. GERAR NOVO ANO LETIVO
+    // C. GERAR NOVO ANO LETIVO (Totalmente Isolado)
     elseif (isset($_POST['action']) && $_POST['action'] === 'generate_year') {
         $targetYear = (int)$_POST['renew_year'];
         $renewalResult = generateAnnualInvoices($pdo, $targetYear);
     }
 
-    // D. Salvar Configurações Gerais
-    else {
+    // D. SALVAR CONFIGURAÇÕES GERAIS (Agora com verificação estrita)
+    // Antes era apenas "else", agora exige que a ação seja 'save_settings'
+    elseif (isset($_POST['action']) && $_POST['action'] === 'save_settings') {
         try {
             $fields = [
                 'site_url', 'language', 'timeZone', 'currencySymbol',
@@ -87,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $sql .= " WHERE id = 1"; 
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
-            $msg = '<div class="alert alert-success">Configurações salvas!</div>';
+            $msg = '<div class="alert alert-success">Configurações salvas com sucesso!</div>';
         } catch (PDOException $e) { $msg = '<div class="alert alert-danger">Erro: ' . $e->getMessage() . '</div>'; }
     }
 }
@@ -136,6 +137,7 @@ function renderToolbar($targetId) {
     </div>
 
     <form method="POST" action="" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="save_settings">
         
         <div id="tab-geral" class="tab-content active">
             <div class="section-block">
@@ -331,13 +333,11 @@ function renderToolbar($targetId) {
                     <br><i class="fas fa-info-circle" style="color:#3498db;"></i> O sistema verifica mês a mês e <b>não duplica</b> cobranças existentes.
                 </p>
 
-                <div id="renewFormSection">
-                    <input type="hidden" name="action" value="generate_year">
-                    
+                <div id="renewLayoutSection">
                     <div style="display: flex; gap: 10px; align-items: flex-end; max-width: 400px;">
                         <div style="flex: 1;">
                             <label style="font-weight: bold; font-size: 0.85rem;">Ano de Referência</label>
-                            <input type="number" id="renew_year_input" name="renew_year" class="form-control" value="<?php echo date('Y') + 1; ?>" min="2024" max="2050">
+                            <input type="number" id="renew_year_input" class="form-control" value="<?php echo date('Y') + 1; ?>" min="2024" max="2050">
                         </div>
                         <button type="button" class="btn-generate" onclick="openRenewModal()">
                             Processar <i class="fas fa-arrow-right"></i>
@@ -350,6 +350,7 @@ function renderToolbar($targetId) {
 
     <div id="tab-api" class="tab-content">
         <form method="POST">
+            <input type="hidden" name="action" value="save_settings">
             <div class="section-block">
                 <h4 class="section-title"><i class="fas fa-brain"></i> IA (Google Gemini)</h4>
                 <div class="settings-grid">
@@ -386,7 +387,9 @@ function renderToolbar($targetId) {
 
             <div style="display: flex; gap: 10px; align-items: center;">
                 
-
+                <button type="button" onclick="openMigrationModal('check_db')" class="btn-secondary" style="border:1px solid #ccc; background:#fff; color:#333; padding: 10px 15px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                    <i class="fas fa-database"></i> <span>Verificar Banco de Dados</span>
+                </button>
 
                 <button type="button" onclick="openMigrationModal('update_system')" class="btn-primary" style="background-color: #6f42c1; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px;">
                     <i class="fab fa-github"></i> <span>Buscar Atualizações (GitHub)</span>
@@ -584,24 +587,24 @@ function closeRenewModal() {
     document.getElementById('renewConfirmModal').style.display = 'none';
 }
 function confirmRenewSubmission() {
-    var form = document.querySelector('form[action=""]'); 
-    // Removemos input anterior se houver
-    var oldInput = document.getElementById('temp_action_input');
-    if(oldInput) oldInput.remove();
+    // Cria um form dinâmico para garantir isolamento
+    var form = document.createElement("form");
+    form.method = "POST";
+    form.action = "";
     
-    var input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'action';
-    input.value = 'generate_year';
-    input.id = 'temp_action_input';
-    form.appendChild(input);
+    var inputAction = document.createElement("input");
+    inputAction.type = "hidden";
+    inputAction.name = "action";
+    inputAction.value = "generate_year";
+    form.appendChild(inputAction);
 
-    var yearInput = document.createElement('input');
-    yearInput.type = 'hidden';
-    yearInput.name = 'renew_year';
-    yearInput.value = document.getElementById('renew_year_input').value;
-    form.appendChild(yearInput);
+    var inputYear = document.createElement("input");
+    inputYear.type = "hidden";
+    inputYear.name = "renew_year";
+    inputYear.value = document.getElementById('renew_year_input').value;
+    form.appendChild(inputYear);
 
+    document.body.appendChild(form);
     form.submit();
 }
 
