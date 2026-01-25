@@ -1,4 +1,4 @@
--- SGE SYSTEM - DATABASE LIMPA PARA GITHUB
+-- SGE SYSTEM - DATABASE LIMPA (COM CONTRATOS PADRÃO)
 -- Credenciais Padrão: admin@admin / admin
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
@@ -73,6 +73,8 @@ CREATE TABLE `system_settings` (
   `certificate_background_image` longtext DEFAULT NULL,
   `imageTermsText` text DEFAULT NULL,
   `enrollmentContractText` text DEFAULT NULL,
+  `term_text_adult` text DEFAULT NULL,
+  `term_text_minor` text DEFAULT NULL,
   `geminiApiKey` varchar(255) DEFAULT NULL,
   `geminiApiEndpoint` varchar(255) DEFAULT NULL,
   `dbHost` varchar(100) DEFAULT 'localhost',
@@ -92,10 +94,15 @@ CREATE TABLE `system_settings` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Dados iniciais de configuração
+-- Dados iniciais de configuração (COM TEXTOS PADRÃO)
 --
-INSERT INTO `system_settings` (`id`, `site_url`, `language`) VALUES
-(1, 'http://localhost', 'pt-BR');
+INSERT INTO `system_settings` (`id`, `site_url`, `language`, `enrollmentContractText`, `term_text_adult`, `term_text_minor`) VALUES
+(1, 'http://localhost', 'pt-BR', 
+'As partes acima qualificadas têm, entre si, justo e contratado o presente CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS, que se regerá pelas cláusulas e condições a seguir descritas:\n\nCLÁUSULA 1 – DO OBJETO\n1.1. O objeto do presente contrato é a prestação de serviços educacionais de ensino livre pela CONTRATADA em favor do ALUNO indicado no preâmbulo, referente ao curso de {{curso_nome}}.\n1.2. A orientação técnica e pedagógica sobre a prestação dos serviços de ensino é de inteira responsabilidade da CONTRATADA.\n\nCLÁUSULA 2 – DO PAGAMENTO E DA BOLSA\n2.1. Pelos serviços educacionais ora contratados, foi acordado o valor de {{curso_mensalidade}}, {{clausula_financeira}}.\n2.2. O pagamento das mensalidades deverá ser efetuado até a data de vencimento estipulada. O não recebimento do boleto ou aviso de cobrança não exime o CONTRATANTE do pagamento.\n2.3. Em caso de atraso no pagamento, incidirá multa de 2% (dois por cento) e juros de mora de 1% (um por cento) ao mês.\n\nCLÁUSULA 3 – DA FREQUÊNCIA E CERTIFICAÇÃO\n3.1. O ALUNO deverá possuir frequência mínima de 75% (setenta e cinco por cento) e aproveitamento suficiente nas avaliações para fazer jus ao certificado de conclusão.\n3.2. A CONTRATADA reserva-se o direito de emitir o certificado apenas após a conclusão de toda a carga horária e quitação de eventuais débitos pendentes, salvo em casos de bolsa integral.\n\nCLÁUSULA 4 – DA RESCISÃO\n4.1. O presente contrato poderá ser rescindido pelo CONTRATANTE a qualquer tempo, mediante solicitação formal por escrito na secretaria da escola.\n4.2. O cancelamento não exime o CONTRATANTE do pagamento das mensalidades vencidas até a data da solicitação.\n4.3. A CONTRATADA poderá rescindir este contrato em caso de indisciplina grave por parte do ALUNO ou inadimplência superior a 60 (sessenta) dias.\n\nCLÁUSULA 5 – DO USO DE IMAGEM\n5.1. As regras referentes ao uso de imagem do aluno estão dispostas em termo próprio anexo a este contrato, devendo ser assinado especificamente para este fim.\n\nCLÁUSULA 6 – DISPOSIÇÕES GERAIS\n6.1. O ALUNO (ou seu responsável) declara estar ciente e de acordo com as normas e o regimento interno da escola.\n6.2. A CONTRATADA não se responsabiliza por objetos de valor deixados nas dependências da escola.\n\nE, por estarem assim justos e contratados, firmam o presente instrumento para que produza seus efeitos legais.\n\n{{escola_nome}}\nCNPJ: {{escola_cnpj}}',
+
+'Eu, {{aluno_nome}}, inscrito(a) no CPF sob o n.º {{aluno_cpf}}, residente e domiciliado(a) em {{aluno_endereco}}, AUTORIZO o uso de minha imagem em todo e qualquer material entre fotos, documentos e outros meios de comunicação, para ser utilizada em campanhas promocionais e institucionais da {{escola_nome}}. A presente autorização é concedida a título gratuito, abrangendo o uso da imagem acima mencionada em todo território nacional e no exterior, das seguintes formas: (I) Out-door; (II) Bus-door; folhetos em geral (encartes, mala direta, catálogo, etc.); (III) Folder de apresentação; (IV) Anúncios em revistas e jornais em geral; (V) Home Page; (VI) Cartazes; (VII) Back-light; (VIII) Mídia eletrônica (painéis, videotapes, televisão, cinema, programa para rádio, entre outros).',
+
+'Eu, {{responsavel_nome}}, inscrito(a) no CPF sob o n.º {{responsavel_cpf}}, na qualidade de responsável legal pelo(a) menor {{aluno_nome}}, AUTORIZO o uso da imagem do(a) referido(a) menor em todo e qualquer material entre fotos, documentos e outros meios de comunicação, para ser utilizada em campanhas promocionais e institucionais da {{escola_nome}}. A presente autorização é concedida a título gratuito, abrangendo o uso da imagem acima mencionada em todo território nacional e no exterior, das seguintes formas: (I) Out-door; (II) Bus-door; folhetos em geral (encartes, mala direta, catálogo, etc.); (III) Folder de apresentação; (IV) Anúncios em revistas e jornais em geral; (V) Home Page; (VI) Cartazes; (VII) Back-light; (VIII) Mídia eletrônica (painéis, videotapes, televisão, cinema, programa para rádio, entre outros).');
 
 -- --------------------------------------------------------
 
@@ -111,6 +118,10 @@ CREATE TABLE `school_profile` (
   `email` varchar(100) DEFAULT NULL,
   `logo` longtext DEFAULT NULL,
   `website` varchar(255) DEFAULT NULL,
+  `cnpj` varchar(30) DEFAULT NULL,
+  `schoolCity` varchar(100) DEFAULT NULL,
+  `profilePicture` longtext DEFAULT NULL,
+  `signatureImage` longtext DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -131,7 +142,11 @@ CREATE TABLE `courses` (
   `schedule_json` text DEFAULT NULL,
   `teacherId` int(11) DEFAULT NULL,
   `course_image` longtext DEFAULT NULL,
+  `thumbnail` longtext DEFAULT NULL,
   `active` tinyint(1) DEFAULT 1,
+  `status` varchar(20) DEFAULT 'Aberto',
+  `totalSlots` int(11) DEFAULT NULL,
+  `carga_horaria` varchar(50) DEFAULT NULL,
   `closed_date` datetime DEFAULT NULL,
   `closed_by_admin_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
@@ -148,7 +163,7 @@ CREATE TABLE `enrollments` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `studentId` int(11) NOT NULL,
   `courseId` int(11) NOT NULL,
-  `status` enum('Pendente','Aprovada','Rejeitada','Cancelada','Concluido') DEFAULT 'Pendente',
+  `status` enum('Pendente','Aprovada','Rejeitada','Cancelada','Concluido', 'Ativo') DEFAULT 'Pendente',
   `enrollmentDate` datetime DEFAULT current_timestamp(),
   `scholarshipPercentage` decimal(5,2) DEFAULT 0.00,
   `contractAcceptedAt` datetime DEFAULT NULL,
@@ -230,6 +245,7 @@ CREATE TABLE `course_teachers` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `courseId` int(11) NOT NULL,
   `teacherId` int(11) NOT NULL,
+  `commissionRate` decimal(5,2) DEFAULT 0.00,
   PRIMARY KEY (`id`),
   KEY `courseId` (`courseId`),
   KEY `teacherId` (`teacherId`)
@@ -248,6 +264,23 @@ CREATE TABLE `school_recess` (
   `end_date` date NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estrutura da tabela `notifications`
+--
+DROP TABLE IF EXISTS `notifications`;
+CREATE TABLE `notifications` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `message` text NOT NULL,
+  `is_read` tinyint(1) DEFAULT 0,
+  `type` varchar(20) DEFAULT 'warning',
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Constraints (Foreign Keys)
