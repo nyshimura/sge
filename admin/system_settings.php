@@ -46,8 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $renewalResult = generateAnnualInvoices($pdo, $targetYear);
     }
 
-    // D. SALVAR CONFIGURAÇÕES GERAIS (Agora com verificação estrita)
-    // Antes era apenas "else", agora exige que a ação seja 'save_settings'
+    // D. SALVAR CONFIGURAÇÕES GERAIS
     elseif (isset($_POST['action']) && $_POST['action'] === 'save_settings') {
         try {
             $fields = [
@@ -56,7 +55,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 'email_approval_subject', 'email_approval_body', 
                 'email_reset_subject', 'email_reset_body',
                 'email_reminder_subject', 'email_reminder_body',
-                'certificate_template_text', 'imageTermsText', 'enrollmentContractText',
+                
+                // --- CAMPOS DE CONTRATO ---
+                'enrollmentContractText', // Contrato Geral
+                'term_text_adult',        // Novo: Termo Adulto
+                'term_text_minor',        // Novo: Termo Menor
+                'certificate_template_text', 
+                'imageTermsText',         // Mantido por compatibilidade
+                
                 'geminiApiKey', 'geminiApiEndpoint',
                 'dbHost', 'dbUser', 'dbPass', 'dbName', 'dbPort',
                 'mp_public_key', 'mp_access_token', 'mp_client_id', 'mp_client_secret',
@@ -226,10 +232,34 @@ function renderToolbar($targetId) {
 
         <div id="tab-docs" class="tab-content">
             <div class="section-block">
-                <h4 class="section-title"><i class="fas fa-file-signature"></i> Contrato de Matrícula</h4>
+                <h4 class="section-title"><i class="fas fa-file-signature"></i> Contrato de Matrícula (Geral)</h4>
                 <div class="form-group">
                     <?php renderToolbar('enrollmentContractText'); ?>
                     <textarea id="enrollmentContractText" name="enrollmentContractText" class="form-control has-toolbar" style="height: 300px;"><?php echo htmlspecialchars($settings['enrollmentContractText']); ?></textarea>
+                </div>
+            </div>
+
+            <div class="section-block" style="margin-top: 20px;">
+                <h4 class="section-title"><i class="fas fa-camera"></i> Termos de Uso de Imagem</h4>
+                <p style="color:#666; font-size:0.9rem; margin-bottom:15px;">
+                    Preencha os dois modelos abaixo. O sistema escolherá automaticamente com base na idade do aluno.
+                </p>
+
+                <div class="settings-grid">
+                    <div class="span-2">
+                        <div class="form-group">
+                            <label style="font-weight:bold; color:#27ae60;">Para Alunos Maiores (+18)</label>
+                            <?php renderToolbar('term_text_adult'); ?>
+                            <textarea id="term_text_adult" name="term_text_adult" class="form-control has-toolbar" style="height: 200px;"><?php echo htmlspecialchars($settings['term_text_adult'] ?? ''); ?></textarea>
+                        </div>
+                    </div>
+                    <div class="span-2">
+                        <div class="form-group">
+                            <label style="font-weight:bold; color:#e67e22;">Para Alunos Menores (-18)</label>
+                            <?php renderToolbar('term_text_minor'); ?>
+                            <textarea id="term_text_minor" name="term_text_minor" class="form-control has-toolbar" style="height: 200px;"><?php echo htmlspecialchars($settings['term_text_minor'] ?? ''); ?></textarea>
+                        </div>
+                    </div>
                 </div>
             </div>
 
