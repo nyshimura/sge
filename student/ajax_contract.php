@@ -1,112 +1,136 @@
 <?php
 // student/ajax_contract.php
+session_start();
 require_once '../config/database.php';
-require_once '../includes/functions.php';
 
-checkLogin();
+header('Content-Type: application/json');
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    exit('Acesso inválido');
+if (!isset($_SESSION['user_id']) || !isset($_POST['courseId'])) {
+    echo json_encode(['error' => 'Acesso negado.']);
+    exit;
 }
 
-$courseId = (int)$_POST['courseId'];
 $studentId = $_SESSION['user_id'];
+$courseId = (int)$_POST['courseId'];
+$dueDay = (int)$_POST['dueDay'];
 
-// Dados do Formulário (Pré-matrícula)
-$inputDueDay = isset($_POST['dueDay']) ? (int)$_POST['dueDay'] : 10;
-$respName = $_POST['guardianName'] ?? '';
-$respCPF = $_POST['guardianCPF'] ?? '';
-$respRG = $_POST['guardianRG'] ?? '';
-$respEmail = $_POST['guardianEmail'] ?? '';
+// --- 1. BUSCA DADOS ---
+// Aluno (incluindo campos de responsável e RG que já existem na tabela users)
+$stmtUser = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+$stmtUser->execute([$studentId]);
+$user = $stmtUser->fetch();
 
-try {
-    // 1. Buscar Dados
-    $stmtUser = $pdo->prepare("SELECT * FROM users WHERE id = :id");
-    $stmtUser->execute([':id' => $studentId]);
-    $user = $stmtUser->fetch();
+// Curso
+$stmtCourse = $pdo->prepare("SELECT * FROM courses WHERE id = ?");
+$stmtCourse->execute([$courseId]);
+$course = $stmtCourse->fetch();
 
-    $stmtSchool = $pdo->query("SELECT * FROM school_profile WHERE id = 1");
-    $school = $stmtSchool->fetch();
+// Configurações e Escola
+$settings = $pdo->query("SELECT * FROM system_settings WHERE id = 1")->fetch();
+$school = $pdo->query("SELECT * FROM school_profile WHERE id = 1")->fetch();
 
-    $stmtCourse = $pdo->prepare("SELECT * FROM courses WHERE id = :id");
-    $stmtCourse->execute([':id' => $courseId]);
-    $course = $stmtCourse->fetch();
-
-    $stmtSettings = $pdo->query("SELECT enrollmentContractText, imageTermsText FROM system_settings WHERE id = 1");
-    $settings = $stmtSettings->fetch();
-
-    // 2. Lógica Menor de Idade
-    $birthDate = new DateTime($user['birthDate']);
-    $isMinor = ((new DateTime())->diff($birthDate)->y < 18);
-
-    if ($isMinor) {
-        $c_nome = !empty($respName) ? $respName : ($user['guardianName'] ?? '_________________');
-        $c_cpf  = !empty($respCPF) ? $respCPF : ($user['guardianCPF'] ?? '_________________');
-        $c_rg   = !empty($respRG) ? $respRG : ($user['guardianRG'] ?? '_________________');
-        $c_email = !empty($respEmail) ? $respEmail : ($user['guardianEmail'] ?? '_________________');
-        $c_end  = $user['address'] ?? '_________________'; 
-    } else {
-        $c_nome = $user['firstName'] . ' ' . $user['lastName'];
-        $c_cpf  = $user['cpf'];
-        $c_rg   = $user['rg'];
-        $c_email = $user['email'];
-        $c_end  = $user['address'];
-    }
-
-    // 3. Lógica Financeira (Na pré-matrícula, assume-se o valor cheio do curso, pois a bolsa é dada pelo ADM depois)
-    // Se quiser que apareça "Isento" aqui, precisaria passar essa info, mas geralmente contrato inicial é padrão.
-    // Vamos manter a lógica padrão, mas usando a função de extenso para ficar bonito.
-    
-    $valorFormatado = number_format($course['monthlyFee'], 2, ',', '.');
-    
-    // Se o valor for > 0, gera texto de cobrança. Se for 0, gera isenção.
-    if ($course['monthlyFee'] > 0) {
-        $valorExtenso = valorPorExtenso($course['monthlyFee']);
-        $clausulaFinanceira = "restando o compromisso dos responsáveis sobre a mensalidade estabelecida no valor de R$ {$valorFormatado} ({$valorExtenso}) a ser paga de maneira antecipada sobre o mês a ser cursado, com vencimento para todo dia {$inputDueDay} de cada mês";
-    } else {
-        $clausulaFinanceira = "sendo concedida bolsa integral de 100% (cem por cento), isentando o ALUNO e seus responsáveis de quaisquer mensalidades referentes ao curso.";
-    }
-
-    // 4. Placeholders
-    $placeholders = [
-        '{{aluno_nome}}' => $user['firstName'] . ' ' . $user['lastName'],
-        '{{aluno_email}}' => $user['email'],
-        '{{aluno_cpf}}' => $user['cpf'] ?? 'N/A',
-        '{{aluno_rg}}' => $user['rg'] ?? 'N/A',
-        '{{aluno_endereco}}' => $user['address'] ?? 'N/A',
-        
-        '{{responsavel_nome}}' => !empty($respName) ? $respName : 'N/A',
-        '{{responsavel_cpf}}' => !empty($respCPF) ? $respCPF : 'N/A',
-        '{{responsavel_rg}}' => !empty($respRG) ? $respRG : 'N/A',
-        
-        '{{contratante_nome}}' => $c_nome,
-        '{{contratante_cpf}}' => $c_cpf,
-        '{{contratante_rg}}' => $c_rg,
-        '{{contratante_email}}' => $c_email,
-        '{{contratante_endereco}}' => $c_end,
-        
-        '{{curso_nome}}' => $course['name'],
-        '{{curso_mensalidade}}' => 'R$ ' . $valorFormatado,
-        '{{vencimento_dia}}' => $inputDueDay,
-        '{{clausula_financeira}}' => $clausulaFinanceira,
-        
-        '{{escola_nome}}' => $school['name'],
-        '{{escola_cnpj}}' => $school['cnpj'],
-        '{{escola_endereco}}' => $school['address'],
-        
-        '{{data_atual_extenso}}' => date('d/m/Y')
-    ];
-
-    $contractHtml = strtr($settings['enrollmentContractText'], $placeholders);
-    $termsHtml = strtr($settings['imageTermsText'], $placeholders);
-
-    echo json_encode([
-        'contract' => nl2br($contractHtml),
-        'terms' => nl2br($termsHtml)
-    ]);
-
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+if (!$user || !$course) {
+    echo json_encode(['error' => 'Dados inválidos.']);
+    exit;
 }
+
+// --- 2. PREPARAÇÃO DOS DADOS ---
+
+// Dados que podem vir do formulário do modal (caso o aluno esteja preenchendo agora)
+$guardianName = $_POST['guardianName'] ?? $user['guardianName'];
+$guardianCPF  = $_POST['guardianCPF'] ?? $user['guardianCPF'];
+// Se você tiver input de RG no modal, adicione $_POST['guardianRG'], senão pega do banco
+$guardianRG   = $user['guardianRG'] ?? ''; 
+
+// Calcula Idade
+$birthDate = new DateTime($user['birthDate']);
+$isMinor = ((new DateTime())->diff($birthDate)->y < 18);
+
+$alunoNome = $user['firstName'] . ' ' . $user['lastName'];
+$alunoCPF = $user['cpf'];
+$alunoRG = $user['rg'] ?? '';
+$alunoEnd = $user['address'] ?? 'Endereço não informado';
+
+// Define QUEM é o "Contratante" para preencher os placeholders
+if ($isMinor) {
+    $contratanteNome = $guardianName;
+    $contratanteCPF  = $guardianCPF;
+    $contratanteRG   = $guardianRG;
+    $contratanteEnd  = $alunoEnd; // Assume-se mesmo endereço do aluno
+} else {
+    $contratanteNome = $alunoNome;
+    $contratanteCPF  = $alunoCPF;
+    $contratanteRG   = $alunoRG;
+    $contratanteEnd  = $alunoEnd;
+}
+
+// Formatação Financeira
+$valor = number_format($course['monthlyFee'], 2, ',', '.');
+$clausulaFin = "restando o compromisso dos responsáveis sobre a mensalidade no valor de R$ {$valor}, vencimento todo dia {$dueDay}";
+
+// Data por Extenso (Manual para garantir funcionamento em qualquer servidor)
+$meses = [
+    1 => 'Janeiro', 2 => 'Fevereiro', 3 => 'Março', 4 => 'Abril', 
+    5 => 'Maio', 6 => 'Junho', 7 => 'Julho', 8 => 'Agosto', 
+    9 => 'Setembro', 10 => 'Outubro', 11 => 'Novembro', 12 => 'Dezembro'
+];
+$hoje = new DateTime();
+$dataExtenso = $hoje->format('d') . ' de ' . $meses[(int)$hoje->format('m')] . ' de ' . $hoje->format('Y');
+
+// --- 3. PLACEHOLDERS (MAPA DE SUBSTITUIÇÃO) ---
+$placeholders = [
+    // Dados do Aluno
+    '{{aluno_nome}}' => $alunoNome,
+    '{{aluno_cpf}}' => $alunoCPF,
+    '{{aluno_rg}}' => $alunoRG,
+    '{{aluno_endereco}}' => $alunoEnd,
+    
+    // Dados do Responsável
+    '{{responsavel_nome}}' => $guardianName,
+    '{{responsavel_cpf}}' => $guardianCPF,
+    '{{responsavel_rg}}' => $guardianRG,
+    
+    // Dados do Contratante (Varia pela idade)
+    '{{contratante_nome}}' => $contratanteNome,
+    '{{contratante_cpf}}' => $contratanteCPF,
+    '{{contratante_rg}}' => $contratanteRG,       // <--- ADICIONADO
+    '{{contratante_endereco}}' => $contratanteEnd, // <--- ADICIONADO
+    
+    // Dados do Curso/Escola
+    '{{curso_nome}}' => $course['name'],
+    '{{curso_mensalidade}}' => 'R$ ' . $valor,
+    '{{vencimento_dia}}' => $dueDay,
+    '{{clausula_financeira}}' => $clausulaFin,
+    '{{escola_nome}}' => $school['name'],
+    '{{escola_cnpj}}' => $school['cnpj'] ?? '',
+    
+    // Data
+    '{{data_atual_extenso}}' => $dataExtenso        // <--- ADICIONADO
+];
+
+// --- 4. PROCESSAMENTO DOS TEXTOS ---
+
+// A. Contrato de Prestação de Serviços
+$contractText = $settings['enrollmentContractText'];
+foreach ($placeholders as $key => $val) {
+    $contractText = str_replace($key, $val, $contractText);
+}
+
+// B. Termo de Imagem
+if ($isMinor) {
+    $termRaw = !empty($settings['term_text_minor']) ? $settings['term_text_minor'] : $settings['imageTermsText'];
+} else {
+    $termRaw = !empty($settings['term_text_adult']) ? $settings['term_text_adult'] : $settings['imageTermsText'];
+}
+
+$termText = $termRaw;
+foreach ($placeholders as $key => $val) {
+    $termText = str_replace($key, $val, $termText);
+}
+
+// --- 5. RETORNO ---
+echo json_encode([
+    'contract' => nl2br($contractText),
+    'terms'    => nl2br($termText)
+]);
 ?>
