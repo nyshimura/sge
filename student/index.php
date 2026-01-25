@@ -1,20 +1,44 @@
 <?php
 // student/index.php
 
-// --- 1. LÓGICA AJAX PARA GERAR PIX (Centralizada) ---
+// 1. INICIALIZAÇÃO E SESSÃO
+if (session_status() == PHP_SESSION_NONE) session_start();
+require_once '../config/database.php';
+require_once '../includes/qr_generator.php'; 
+
+$studentId = $_SESSION['user_id'];
+$feedbackMsg = '';
+
+// --- LÓGICA 1: PROCESSAR ASSINATURA EM MASSA (NOVO) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'sign_all_pending') {
+    try {
+        // Atualiza TODOS os cursos ativos deste aluno que estão sem data de aceite
+        $stmtUpdate = $pdo->prepare("
+            UPDATE enrollments 
+            SET termsAcceptedAt = NOW() 
+            WHERE studentId = :uid 
+            AND status IN ('Aprovada', 'Ativo')
+            AND (termsAcceptedAt IS NULL OR termsAcceptedAt = '0000-00-00 00:00:00')
+        ");
+        $stmtUpdate->execute([':uid' => $studentId]);
+        
+        if ($stmtUpdate->rowCount() > 0) {
+            $feedbackMsg = 'success_terms';
+        }
+    } catch (Exception $e) {
+        $feedbackMsg = 'error_terms';
+    }
+}
+
+// --- LÓGICA 2: AJAX PIX (MANTIDA) ---
 if (isset($_GET['action']) && $_GET['action'] === 'get_pix' && isset($_GET['pid'])) {
-    if (session_status() == PHP_SESSION_NONE) session_start();
-    require_once '../config/database.php';
-    require_once '../includes/qr_generator.php'; 
-
     header('Content-Type: application/json');
-
     $paymentId = (int)$_GET['pid'];
-    $studentId = $_SESSION['user_id'];
+    $studentIdCheck = $_SESSION['user_id'];
 
     // Verificação de segurança
     $check = $pdo->prepare("SELECT id FROM payments WHERE id = :pid AND studentId = :sid");
-    $check->execute([':pid' => $paymentId, ':sid' => $studentId]);
+    $check->execute([':pid' => $paymentId, ':sid' => $studentIdCheck]);
     
     if ($check->rowCount() > 0) {
         $result = generatePixForPayment($paymentId, $pdo);
@@ -28,57 +52,49 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_pix' && isset($_GET['pid'
 $pageTitle = "Painel do Aluno";
 include '../includes/student_header.php';
 
-$studentId = $_SESSION['user_id'];
-
-// --- 1. BUSCAR CURSOS ATIVOS ---
-$sqlCourses = "SELECT c.id, c.name, c.thumbnail, e.status, e.customMonthlyFee, e.scholarshipPercentage, c.monthlyFee, e.enrollmentDate
-               FROM enrollments e
-               JOIN courses c ON e.courseId = c.id
-               WHERE e.studentId = :uid AND e.status IN ('Aprovada', 'Ativo')
-               ORDER BY e.enrollmentDate DESC";
-$stmtCourses = $pdo->prepare($sqlCourses);
+// --- CONSULTAS PADRÃO (Cursos, Certificados, Financeiro) ---
+// (Mantive suas consultas originais aqui)
+$stmtCourses = $pdo->prepare("SELECT c.id, c.name, c.thumbnail, e.status, e.customMonthlyFee, e.scholarshipPercentage, c.monthlyFee, e.enrollmentDate FROM enrollments e JOIN courses c ON e.courseId = c.id WHERE e.studentId = :uid AND e.status IN ('Aprovada', 'Ativo') ORDER BY e.enrollmentDate DESC");
 $stmtCourses->execute([':uid' => $studentId]);
 $activeCourses = $stmtCourses->fetchAll();
 
-// --- 2. BUSCAR CERTIFICADOS ---
-$sqlCert = "SELECT cert.*, c.name as course_name 
-            FROM certificates cert
-            JOIN courses c ON cert.course_id = c.id
-            WHERE cert.student_id = :uid
-            ORDER BY cert.completion_date DESC";
-$stmtCert = $pdo->prepare($sqlCert);
+$stmtCert = $pdo->prepare("SELECT cert.*, c.name as course_name FROM certificates cert JOIN courses c ON cert.course_id = c.id WHERE cert.student_id = :uid ORDER BY cert.completion_date DESC");
 $stmtCert->execute([':uid' => $studentId]);
 $certificates = $stmtCert->fetchAll();
 
-// --- 3. BUSCAR COBRANÇAS PENDENTES OU ATRASADAS ---
 $openInvoices = [];
 try {
-    $sqlFin = "SELECT p.*, c.name as course_name 
-               FROM payments p
-               JOIN courses c ON p.courseId = c.id
-               WHERE p.studentId = :uid AND p.status = 'Pendente'
-               ORDER BY p.dueDate ASC LIMIT 3";
-    $stmtFin = $pdo->prepare($sqlFin);
+    $stmtFin = $pdo->prepare("SELECT p.*, c.name as course_name FROM payments p JOIN courses c ON p.courseId = c.id WHERE p.studentId = :uid AND p.status = 'Pendente' ORDER BY p.dueDate ASC LIMIT 3");
     $stmtFin->execute([':uid' => $studentId]);
     $openInvoices = $stmtFin->fetchAll();
-} catch (Exception $e) {
-    $openInvoices = [];
-}
+} catch (Exception $e) {}
 
-// Cálculo da mensalidade total ativa
+// --- VERIFICAÇÃO DE TERMOS PENDENTES ---
+// Verifica se AINDA sobrou algum termo pendente para mostrar o box amarelo
+$stmtTerms = $pdo->prepare("
+    SELECT c.name as courseName 
+    FROM enrollments e 
+    JOIN courses c ON e.courseId = c.id
+    WHERE e.studentId = :uid 
+    AND e.status IN ('Aprovada', 'Ativo')
+    AND (e.termsAcceptedAt IS NULL OR e.termsAcceptedAt = '0000-00-00 00:00:00')
+");
+$stmtTerms->execute([':uid' => $studentId]);
+$pendingTerms = $stmtTerms->fetchAll(PDO::FETCH_ASSOC);
+
+// Total mensalidade
 $totalMensalidade = 0;
 foreach($activeCourses as $ac) {
-    if (!empty($ac['customMonthlyFee']) && $ac['customMonthlyFee'] > 0) {
-        $totalMensalidade += $ac['customMonthlyFee'];
-    } elseif (!empty($ac['scholarshipPercentage']) && $ac['scholarshipPercentage'] > 0) {
-        $totalMensalidade += max(0, $ac['monthlyFee'] - ($ac['monthlyFee'] * ($ac['scholarshipPercentage'] / 100)));
-    } else {
-        $totalMensalidade += $ac['monthlyFee'];
-    }
+    if (!empty($ac['customMonthlyFee']) && $ac['customMonthlyFee'] > 0) $totalMensalidade += $ac['customMonthlyFee'];
+    elseif (!empty($ac['scholarshipPercentage']) && $ac['scholarshipPercentage'] > 0) $totalMensalidade += max(0, $ac['monthlyFee'] - ($ac['monthlyFee'] * ($ac['scholarshipPercentage'] / 100)));
+    else $totalMensalidade += $ac['monthlyFee'];
 }
 ?>
 
 <style>
+    /* (Seus estilos CSS anteriores mantidos...) */
+    /* ... */
+    
     /* --- Scrollbar Local --- */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -190,11 +206,46 @@ foreach($activeCourses as $ac) {
     
     .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* Estilo do Botão de Assinar em Massa */
+    .btn-sign-all {
+        background-color: #27ae60; /* Verde para ação positiva */
+        color: white;
+        font-weight: 700;
+        padding: 12px 25px;
+        border-radius: 6px;
+        text-decoration: none;
+        transition: 0.2s;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 1rem;
+        box-shadow: 0 3px 0 #219150;
+    }
+    .btn-sign-all:hover {
+        background-color: #2ecc71;
+        transform: translateY(-2px);
+    }
+    .btn-sign-all:active {
+        transform: translateY(0);
+        box-shadow: none;
+    }
 </style>
 
 <div class="content-wrapper" style="padding: 0;">
-    
     <div class="page-container" style="padding: 30px; max-width: 1400px; margin: 0 auto;">
+
+        <?php if ($feedbackMsg === 'success_terms'): ?>
+            <div class="alert alert-success" style="margin-bottom: 20px; border-radius: 8px; padding: 15px; background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; display:flex; align-items:center; gap:10px;">
+                <i class="fas fa-check-circle fa-2x"></i>
+                <div>
+                    <strong>Sucesso!</strong><br>
+                    Todos os termos pendentes foram assinados e registrados com a data de hoje.
+                </div>
+            </div>
+        <?php endif; ?>
 
         <div class="dashboard-stats">
             <div class="stat-card">
@@ -299,7 +350,32 @@ foreach($activeCourses as $ac) {
                         <p style="font-size:0.9rem; margin:0;">Tudo em dia!</p>
                     </div>
                 <?php endif; ?>
-            </div>
+
+                <?php if (count($pendingTerms) > 0): ?>
+                    <div class="pending-terms-box" style="background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 8px; padding: 20px; margin-top: 25px;">
+                        
+                        <div class="terms-header" style="display:flex; align-items:center; gap:10px; color:#856404; margin-bottom:15px;">
+                            <i class="fas fa-file-contract fa-lg"></i>
+                            <h3 style="margin:0; font-size:1.1rem;">Termos de Uso Pendentes</h3>
+                        </div>
+                        
+                        <p style="color: #856404; font-size: 0.95rem; margin-bottom: 20px; line-height: 1.5;">
+                            Identificamos que você possui <strong><?php echo count($pendingTerms); ?></strong> curso(s) sem a confirmação de leitura dos termos de uso.
+                            <br><small>(Ao clicar abaixo, você declara que leu e aceita os termos vigentes).</small>
+                        </p>
+
+                        <form method="POST">
+                            <input type="hidden" name="action" value="sign_all_pending">
+                            
+                            <button type="submit" class="btn-sign-all" style="width: 100%; justify-content: center;">
+                                <i class="fas fa-pen-fancy"></i> 
+                                Li e Concordo - Assinar Tudo
+                            </button>
+                        </form>
+
+                    </div>
+                <?php endif; ?>
+                </div>
 
             <div>
                 <div class="section-header" style="margin-top:0;">
@@ -335,7 +411,8 @@ foreach($activeCourses as $ac) {
 
         </div>
 
-    </div> </div>
+    </div> 
+</div>
 
 <div id="pixModal">
     <div class="card-box" style="max-width:400px; width:95%; text-align:center; border-top: 5px solid #32bcad;">
