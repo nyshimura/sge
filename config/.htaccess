@@ -1,0 +1,5 @@
+# sge/config/.htaccess
+
+# Bloqueia o acesso direto a qualquer arquivo desta pasta
+Order Deny,Allow
+Require all denied
