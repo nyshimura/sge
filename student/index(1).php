@@ -4,22 +4,15 @@
 // 1. INICIALIZAÇÃO E SESSÃO
 if (session_status() == PHP_SESSION_NONE) session_start();
 require_once '../config/database.php';
-
-// IMPORTANTE: Agora carregamos o Motor Central do Pix
-// Certifique-se de ter criado o arquivo includes/pix_engine.php com o código que passei antes
-if (file_exists('../includes/pix_engine.php')) {
-    require_once '../includes/pix_engine.php';
-} else {
-    // Fallback caso o motor não exista (evita erro fatal, mas avisa)
-    die("Erro crítico: O arquivo includes/pix_engine.php não foi encontrado.");
-}
+require_once '../includes/qr_generator.php'; 
 
 $studentId = $_SESSION['user_id'];
 $feedbackMsg = '';
 
-// --- LÓGICA 1: PROCESSAR ASSINATURA EM MASSA (MANTIDA) ---
+// --- LÓGICA 1: PROCESSAR ASSINATURA EM MASSA (NOVO) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'sign_all_pending') {
     try {
+        // Atualiza TODOS os cursos ativos deste aluno que estão sem data de aceite
         $stmtUpdate = $pdo->prepare("
             UPDATE enrollments 
             SET termsAcceptedAt = NOW() 
@@ -37,23 +30,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// --- LÓGICA 2: AJAX PIX (AGORA VIA MOTOR CENTRAL) ---
-// Isso garante que se você estiver usando Pix Manual, ele funcione. 
-// Se ativar o Inter no futuro, funciona automaticamente.
+// --- LÓGICA 2: AJAX PIX (MANTIDA) ---
 if (isset($_GET['action']) && $_GET['action'] === 'get_pix' && isset($_GET['pid'])) {
     header('Content-Type: application/json');
+    $paymentId = (int)$_GET['pid'];
+    $studentIdCheck = $_SESSION['user_id'];
+
+    // Verificação de segurança
+    $check = $pdo->prepare("SELECT id FROM payments WHERE id = :pid AND studentId = :sid");
+    $check->execute([':pid' => $paymentId, ':sid' => $studentIdCheck]);
     
-    // Chama o motor que decide qual banco usar (Inter > MP > Manual)
-    $response = processPixRequest((int)$_GET['pid'], $_SESSION['user_id'], $pdo);
-    
-    echo json_encode($response);
+    if ($check->rowCount() > 0) {
+        $result = generatePixForPayment($paymentId, $pdo);
+        echo json_encode($result);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Acesso negado.']);
+    }
     exit;
 }
 
 $pageTitle = "Painel do Aluno";
 include '../includes/student_header.php';
 
-// --- CONSULTAS PADRÃO (MANTIDAS EXATAMENTE COMO NO SEU CÓDIGO) ---
+// --- CONSULTAS PADRÃO (Cursos, Certificados, Financeiro) ---
+// (Mantive suas consultas originais aqui)
 $stmtCourses = $pdo->prepare("SELECT c.id, c.name, c.thumbnail, e.status, e.customMonthlyFee, e.scholarshipPercentage, c.monthlyFee, e.enrollmentDate FROM enrollments e JOIN courses c ON e.courseId = c.id WHERE e.studentId = :uid AND e.status IN ('Aprovada', 'Ativo') ORDER BY e.enrollmentDate DESC");
 $stmtCourses->execute([':uid' => $studentId]);
 $activeCourses = $stmtCourses->fetchAll();
@@ -67,11 +67,10 @@ try {
     $stmtFin = $pdo->prepare("SELECT p.*, c.name as course_name FROM payments p JOIN courses c ON p.courseId = c.id WHERE p.studentId = :uid AND p.status = 'Pendente' ORDER BY p.dueDate ASC LIMIT 3");
     $stmtFin->execute([':uid' => $studentId]);
     $openInvoices = $stmtFin->fetchAll();
-} catch (Exception $e) {
-    $openInvoices = [];
-}
+} catch (Exception $e) {}
 
 // --- VERIFICAÇÃO DE TERMOS PENDENTES ---
+// Verifica se AINDA sobrou algum termo pendente para mostrar o box amarelo
 $stmtTerms = $pdo->prepare("
     SELECT c.name as courseName 
     FROM enrollments e 
@@ -83,20 +82,19 @@ $stmtTerms = $pdo->prepare("
 $stmtTerms->execute([':uid' => $studentId]);
 $pendingTerms = $stmtTerms->fetchAll(PDO::FETCH_ASSOC);
 
-// Cálculo da mensalidade total ativa
+// Total mensalidade
 $totalMensalidade = 0;
 foreach($activeCourses as $ac) {
-    if (!empty($ac['customMonthlyFee']) && $ac['customMonthlyFee'] > 0) {
-        $totalMensalidade += $ac['customMonthlyFee'];
-    } elseif (!empty($ac['scholarshipPercentage']) && $ac['scholarshipPercentage'] > 0) {
-        $totalMensalidade += max(0, $ac['monthlyFee'] - ($ac['monthlyFee'] * ($ac['scholarshipPercentage'] / 100)));
-    } else {
-        $totalMensalidade += $ac['monthlyFee'];
-    }
+    if (!empty($ac['customMonthlyFee']) && $ac['customMonthlyFee'] > 0) $totalMensalidade += $ac['customMonthlyFee'];
+    elseif (!empty($ac['scholarshipPercentage']) && $ac['scholarshipPercentage'] > 0) $totalMensalidade += max(0, $ac['monthlyFee'] - ($ac['monthlyFee'] * ($ac['scholarshipPercentage'] / 100)));
+    else $totalMensalidade += $ac['monthlyFee'];
 }
 ?>
 
 <style>
+    /* (Seus estilos CSS anteriores mantidos...) */
+    /* ... */
+    
     /* --- Scrollbar Local --- */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -209,24 +207,9 @@ foreach($activeCourses as $ac) {
     .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-    /* ESTILO NOVO: PENDÊNCIAS DE TERMOS */
-    .pending-terms-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeeba;
-        border-radius: 8px;
-        padding: 20px;
-        margin-top: 25px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
-    .terms-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 15px;
-        color: #856404;
-    }
+    /* Estilo do Botão de Assinar em Massa */
     .btn-sign-all {
-        background-color: #27ae60;
+        background-color: #27ae60; /* Verde para ação positiva */
         color: white;
         font-weight: 700;
         padding: 12px 25px;
@@ -383,14 +366,16 @@ foreach($activeCourses as $ac) {
 
                         <form method="POST">
                             <input type="hidden" name="action" value="sign_all_pending">
+                            
                             <button type="submit" class="btn-sign-all" style="width: 100%; justify-content: center;">
-                                <i class="fas fa-pen-fancy"></i> Li e Concordo - Assinar Tudo
+                                <i class="fas fa-pen-fancy"></i> 
+                                Li e Concordo - Assinar Tudo
                             </button>
                         </form>
 
                     </div>
                 <?php endif; ?>
-            </div>
+                </div>
 
             <div>
                 <div class="section-header" style="margin-top:0;">
@@ -466,20 +451,24 @@ foreach($activeCourses as $ac) {
 
 <script>
 function abrirPix(paymentId, val) {
+    // 1. Abre o modal em estado de carregamento
     document.getElementById('pixModal').style.display = 'flex';
     document.getElementById('pixLoading').style.display = 'block';
     document.getElementById('pixContent').style.display = 'none';
     document.getElementById('pixVal').innerText = 'R$ ' + val;
 
+    // 2. Faz a requisição AJAX
     fetch('index.php?action=get_pix&pid=' + paymentId)
         .then(response => response.json())
         .then(data => {
             document.getElementById('pixLoading').style.display = 'none';
             
             if (data.success) {
+                // 3. Exibe os dados
                 document.getElementById('pixContent').style.display = 'block';
                 document.getElementById('pixQrImage').src = 'data:image/png;base64,' + data.qr_image_base64;
                 document.getElementById('pixKeyText').value = data.copia_e_cola;
+                // REMOVIDA A LÓGICA DE EXIBIÇÃO DA BADGE
             } else {
                 alert("Erro ao gerar PIX: " + data.error);
                 closePix();

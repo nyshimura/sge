@@ -1,27 +1,34 @@
 <?php
 // student/course_panel.php
 
-// --- LÓGICA AJAX PARA GERAR PIX (CENTRALIZADA NO ENGINE) ---
+// --- 1. LÓGICA AJAX PARA GERAR PIX (Centralizada) ---
 if (isset($_GET['action']) && $_GET['action'] === 'get_pix' && isset($_GET['pid'])) {
     if (session_status() == PHP_SESSION_NONE) session_start();
     require_once '../config/database.php';
-    
+    require_once '../includes/qr_generator.php'; 
+
     header('Content-Type: application/json');
+
+    $paymentId = (int)$_GET['pid'];
+    $studentId = $_SESSION['user_id'];
+
+    // Verificação de segurança
+    $check = $pdo->prepare("SELECT id FROM payments WHERE id = :pid AND studentId = :sid");
+    $check->execute([':pid' => $paymentId, ':sid' => $studentId]);
     
-    // Importa o motor
-    require_once '../includes/pix_engine.php';
-    
-    // Processa a requisição usando o motor central
-    $response = processPixRequest((int)$_GET['pid'], $_SESSION['user_id'], $pdo);
-    
-    echo json_encode($response);
+    if ($check->rowCount() > 0) {
+        $result = generatePixForPayment($paymentId, $pdo);
+        echo json_encode($result);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Acesso negado.']);
+    }
     exit;
 }
 // --- FIM DA LÓGICA AJAX ---
 
 include '../includes/student_header.php';
 
-// Recebe o ID do CURSO (cid)
+// Recebe o ID do CURSO (cid) vindo da página anterior
 $courseId = isset($_GET['cid']) ? (int)$_GET['cid'] : 0;
 $studentId = $_SESSION['user_id'];
 
@@ -334,14 +341,13 @@ function openTab(evt, tabName) {
     if(evt) evt.currentTarget.className += " active";
 }
 
-// Lógica de Pix (Chamada para o endpoint AJAX neste mesmo arquivo)
+// Lógica de Pix Atualizada (Consome o endpoint no topo do arquivo)
 function abrirPix(paymentId, val) {
     document.getElementById('pixModal').style.display = 'flex';
     document.getElementById('pixLoading').style.display = 'block';
     document.getElementById('pixContent').style.display = 'none';
     document.getElementById('pixVal').innerText = 'R$ ' + val;
 
-    // A URL chama ?action=get_pix dentro deste arquivo
     fetch('course_panel.php?action=get_pix&pid=' + paymentId + '&cid=<?php echo $courseId; ?>')
         .then(response => response.json())
         .then(data => {
@@ -368,7 +374,7 @@ function closePix() { document.getElementById('pixModal').style.display = 'none'
 function copyPixKey() {
     const keyText = document.getElementById('pixKeyText');
     keyText.select();
-    keyText.setSelectionRange(0, 99999); 
+    keyText.setSelectionRange(0, 99999);
     navigator.clipboard.writeText(keyText.value).then(() => { alert("Código copiado!"); });
 }
 </script>
