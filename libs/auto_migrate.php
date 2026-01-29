@@ -1,25 +1,22 @@
 <?php
 /**
  * libs/auto_migrate.php
- * Sistema de Atualização (Retorno JSON para Modal)
+ * Sistema de Atualização Automática (Arquivos + Banco via database.sql)
  */
 
-// Limpa qualquer output anterior para não quebrar o JSON
 ob_start();
-
 set_time_limit(300);
-ini_set('display_errors', 0); // Desliga erros na tela (vão pro log)
+ini_set('display_errors', 0);
 error_reporting(E_ALL);
-
 header('Content-Type: application/json; charset=utf-8');
 
-// --- CONFIGURAÇÕES ---
+// --- CONFIGURAÇÕES GITHUB ---
 define('GITHUB_USER',   'nyshimura');      
 define('GITHUB_REPO',   'sge');  
 define('GITHUB_BRANCH', 'main');             
-define('GITHUB_TOKEN',  '');                 
+define('GITHUB_TOKEN',  ''); // Se for repositório privado, coloque o token aqui
 
-// Ajuste de conexão
+// Conexão com o Banco
 $conn = null;
 if (file_exists(__DIR__ . '/../config/database.php')) {
     require_once __DIR__ . '/../config/database.php';
@@ -34,12 +31,10 @@ $response = [
 ];
 
 function addLog(&$resp, $msg, $type = 'info') {
-    // Tipos: info, success, warning, error
     $resp['logs'][] = ['msg' => $msg, 'type' => $type];
 }
 
-// ... (Funções auxiliares: getLocalVersion, getRemoteVersion, downloadAndExtract, recursiveCopy, cleanupTemp) ...
-// VOU RESUMIR AS FUNÇÕES AQUI MANTENDO A LÓGICA, MAS ADAPTANDO PARA O ARRAY DE LOGS
+// --- FUNÇÕES DE VERSÃO E DOWNLOAD (Mantidas e Otimizadas) ---
 
 function getLocalVersion() {
     $path = __DIR__ . '/../package.json';
@@ -58,46 +53,62 @@ function getRemoteVersion() {
     }
     $context = stream_context_create($opts);
     $content = @file_get_contents($url, false, $context);
-    if (!$content) return null;
-    $json = json_decode($content, true);
-    return $json['version'] ?? null;
+    return $content ? (json_decode($content, true)['version'] ?? null) : null;
+}
+
+function recursiveCopy($src, $dst, &$resp) {
+    $dir = opendir($src);
+    @mkdir($dst);
+    while (($file = readdir($dir))) {
+        if (($file != '.') && ($file != '..')) {
+            $srcPath = $src . '/' . $file;
+            $dstPath = $dst . '/' . $file;
+            // Protege o arquivo de conexão para não ser sobrescrito
+            if (strpos($dstPath, 'config/database.php') !== false) continue;
+            
+            if (is_dir($srcPath)) {
+                recursiveCopy($srcPath, $dstPath, $resp);
+            } else {
+                copy($srcPath, $dstPath);
+            }
+        }
+    }
+    closedir($dir);
 }
 
 function downloadAndExtractUpdate(&$resp) {
-    // 1. Verificação
     $localVer = getLocalVersion();
     $remoteVer = getRemoteVersion();
     
     $resp['version_local'] = $localVer;
     $resp['version_remote'] = $remoteVer ?: 'Erro ao ler';
 
-    if ($remoteVer) {
-        if (version_compare($remoteVer, $localVer, '<=') && !isset($_GET['force'])) {
-            addLog($resp, "Sistema já está atualizado (v$localVer).", 'success');
-            return true; 
-        }
-        addLog($resp, "Nova versão detectada: v$remoteVer. Iniciando...", 'info');
+    if ($remoteVer && version_compare($remoteVer, $localVer, '<=') && !isset($_GET['force'])) {
+        addLog($resp, "Sistema já está atualizado (v$localVer).", 'success');
+        return true; 
     }
+    
+    if ($remoteVer) addLog($resp, "Nova versão detectada: v$remoteVer. Baixando...", 'info');
 
-    // 2. Download
     $zipUrl = "https://github.com/" . GITHUB_USER . "/" . GITHUB_REPO . "/archive/refs/heads/" . GITHUB_BRANCH . ".zip";
     $tempZip = __DIR__ . '/update_temp.zip';
     $extractPath = __DIR__ . '/update_temp_folder';
     
+    // Deleta temp antigos se existirem
+    if (file_exists($tempZip)) unlink($tempZip);
+    if (is_dir($extractPath)) deleteDirectory($extractPath);
+
     $opts = ['http' => ['method' => 'GET', 'header' => ['User-Agent: PHP-Updater']]];
     if (!empty(GITHUB_TOKEN)) $opts['http']['header'][] = "Authorization: token " . GITHUB_TOKEN;
     
-    $context = stream_context_create($opts);
-    $fileContent = @file_get_contents($zipUrl, false, $context);
+    $fileContent = @file_get_contents($zipUrl, false, stream_context_create($opts));
 
     if (!$fileContent) {
         addLog($resp, "Falha no download do ZIP.", 'error');
         return false;
     }
     file_put_contents($tempZip, $fileContent);
-    addLog($resp, "Download concluído.", 'info');
 
-    // 3. Extração
     $zip = new ZipArchive;
     if ($zip->open($tempZip) === TRUE) {
         if (!is_dir($extractPath)) mkdir($extractPath, 0755, true);
@@ -117,41 +128,16 @@ function downloadAndExtractUpdate(&$resp) {
             $systemRoot = realpath(__DIR__ . '/../');
             recursiveCopy($sourceRoot, $systemRoot, $resp);
             addLog($resp, "Arquivos atualizados com sucesso!", 'success');
-        } else {
-            addLog($resp, "Erro: Estrutura do ZIP inválida.", 'error');
         }
-        cleanupTemp($tempZip, $extractPath);
+        
+        // Limpeza
+        @unlink($tempZip);
+        deleteDirectory($extractPath);
         return true;
     } else {
         addLog($resp, "Erro ao abrir ZIP.", 'error');
         return false;
     }
-}
-
-function recursiveCopy($src, $dst, &$resp) {
-    $dir = opendir($src);
-    @mkdir($dst);
-    while (($file = readdir($dir))) {
-        if (($file != '.') && ($file != '..')) {
-            $srcPath = $src . '/' . $file;
-            $dstPath = $dst . '/' . $file;
-            if (strpos($dstPath, 'config/database.php') !== false) {
-                // addLog($resp, "Protegido: database.php", 'warning'); // Opcional logar
-                continue;
-            }
-            if (is_dir($srcPath)) {
-                recursiveCopy($srcPath, $dstPath, $resp);
-            } else {
-                copy($srcPath, $dstPath);
-            }
-        }
-    }
-    closedir($dir);
-}
-
-function cleanupTemp($zip, $folder) {
-    @unlink($zip);
-    deleteDirectory($folder);
 }
 
 function deleteDirectory($dir) {
@@ -164,16 +150,69 @@ function deleteDirectory($dir) {
     return rmdir($dir);
 }
 
-// Função Banco
-function checkAndAddColumn($conn, $table, $column, $sqlCommand) {
-    try {
-        $stmt = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
-        if ($stmt->rowCount() == 0) {
-            $conn->exec($sqlCommand);
-            return "Coluna '$column' criada em '$table'.";
+// --- NOVA LÓGICA DE MIGRAÇÃO AUTOMÁTICA VIA SQL ---
+
+function syncDatabaseFromSql($conn, &$resp) {
+    $sqlFile = __DIR__ . '/../database.sql';
+
+    if (!file_exists($sqlFile)) {
+        addLog($resp, "Arquivo database.sql não encontrado na raiz.", 'warning');
+        return;
+    }
+
+    $sqlContent = file_get_contents($sqlFile);
+    
+    // 1. Extrai as definições de tabela (CREATE TABLE)
+    // Regex poderosa para pegar o nome da tabela e o corpo dela
+    preg_match_all('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(\w+)`?\s*\((.*)\)\s*(?:ENGINE|DEFAULT|CHARSET|;)/sUi', $sqlContent, $matches);
+
+    if (empty($matches[0])) {
+        addLog($resp, "Nenhuma tabela encontrada no database.sql.", 'warning');
+        return;
+    }
+
+    foreach ($matches[1] as $idx => $tableName) {
+        $tableBody = $matches[2][$idx];
+        
+        // Verifica se a tabela existe
+        try {
+            $stmt = $conn->query("SHOW TABLES LIKE '$tableName'");
+            
+            // A. SE A TABELA NÃO EXISTIR -> CRIA
+            if ($stmt->rowCount() == 0) {
+                $createQuery = "CREATE TABLE IF NOT EXISTS `$tableName` ($tableBody) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+                $conn->exec($createQuery);
+                addLog($resp, "Tabela criada: $tableName", 'success');
+                continue; // Passa para a próxima tabela
+            }
+
+            // B. SE A TABELA EXISTIR -> VERIFICA COLUNAS
+            // Regex para pegar linhas que começam com `nome_coluna`
+            preg_match_all('/^\s*`(\w+)`\s+(.*?),?$/m', $tableBody, $colMatches);
+
+            foreach ($colMatches[1] as $cIdx => $colName) {
+                // Ignora chaves primárias ou constraints definidas no final
+                if (in_array(strtoupper($colName), ['PRIMARY', 'KEY', 'CONSTRAINT', 'UNIQUE', 'FOREIGN'])) continue;
+
+                $colDef = trim($colMatches[2][$cIdx]);
+                // Remove vírgula final se tiver
+                if (substr($colDef, -1) == ',') $colDef = substr($colDef, 0, -1);
+
+                // Verifica se a coluna existe na tabela do banco
+                $stmtCol = $conn->query("SHOW COLUMNS FROM `$tableName` LIKE '$colName'");
+                
+                if ($stmtCol->rowCount() == 0) {
+                    // Coluna não existe, vamos adicionar!
+                    $alterSQL = "ALTER TABLE `$tableName` ADD COLUMN `$colName` $colDef";
+                    $conn->exec($alterSQL);
+                    addLog($resp, "Coluna adicionada: $colName em $tableName", 'success');
+                }
+            }
+
+        } catch (Exception $e) {
+            addLog($resp, "Erro ao sincronizar $tableName: " . $e->getMessage(), 'error');
         }
-        return null;
-    } catch (PDOException $e) { return "Erro DB ($table): " . $e->getMessage(); }
+    }
 }
 
 // --- EXECUÇÃO ---
@@ -181,39 +220,22 @@ function checkAndAddColumn($conn, $table, $column, $sqlCommand) {
 $action = $_GET['action'] ?? '';
 
 try {
-    // 1. Atualizar Arquivos
+    // 1. Atualizar Arquivos (Se solicitado)
     if ($action == 'update_system') {
         addLog($response, "Iniciando atualização de arquivos...", 'info');
         downloadAndExtractUpdate($response);
     }
 
-    // 2. Migrar Banco (Sempre roda se houver conexão)
+    // 2. Migrar Banco (Roda sempre que chamar o script)
     if ($conn) {
-        addLog($response, "Verificando banco de dados...", 'info');
+        addLog($response, "Sincronizando banco de dados...", 'info');
         
-        $migrations = [
-            ['table'=>'courses', 'column'=>'schedule_json', 'command'=>"ALTER TABLE courses ADD COLUMN schedule_json TEXT DEFAULT NULL"],
-            ['table'=>'users', 'column'=>'phone', 'command'=>"ALTER TABLE `users` ADD COLUMN `phone` VARCHAR(20) DEFAULT NULL"],
-            ['table'=>'courses', 'column'=>'closed_date', 'command'=>"ALTER TABLE courses ADD COLUMN closed_date DATETIME DEFAULT NULL"],
-            ['table'=>'enrollments', 'column'=>'customDueDay', 'command'=>"ALTER TABLE `enrollments` ADD COLUMN `customDueDay` int(2) DEFAULT NULL"],
-            ['table'=>'payments', 'column'=>'reminderSent', 'command'=>"ALTER TABLE `payments` ADD COLUMN `reminderSent` tinyint(1) NOT NULL DEFAULT 0"],
-            ['table'=>'system_settings', 'column'=>'email_reminder_subject', 'command'=>"ALTER TABLE `system_settings` ADD COLUMN `email_reminder_subject` varchar(255) DEFAULT 'Lembrete'"],
-            ['table'=>'system_settings', 'column'=>'email_reminder_body', 'command'=>"ALTER TABLE `system_settings` ADD COLUMN `email_reminder_body` text DEFAULT NULL"],
-            ['table'=>'system_settings', 'column'=>'reminderDaysBefore', 'command'=>"ALTER TABLE `system_settings` ADD COLUMN `reminderDaysBefore` int(11) NOT NULL DEFAULT 3"]
-        ];
+        // Chama a nova função mágica
+        syncDatabaseFromSql($conn, $response);
 
-        foreach ($migrations as $mig) {
-            $res = checkAndAddColumn($conn, $mig['table'], $mig['column'], $mig['command']);
-            if ($res) addLog($response, $res, 'success');
-        }
+        // Se quiser manter migrações manuais específicas, pode deixar aqui também:
+        // checkAndAddColumn($conn, 'tabela', 'coluna', 'comando sql...');
         
-        // Template
-        $chk = $conn->query("SELECT email_reminder_body FROM system_settings WHERE id=1");
-        if ($chk && $chk->fetchColumn() === null) {
-            $defaultBody = 'Olá {{aluno_nome}},\n\nSua mensalidade vence em {{vencimento}}.\nValor: {{valor}}';
-            $conn->exec("UPDATE system_settings SET email_reminder_body='$defaultBody' WHERE id=1");
-            addLog($response, "Template de e-mail padrão inserido.", 'success');
-        }
     } else {
         addLog($response, "Sem conexão com Banco de Dados.", 'error');
     }

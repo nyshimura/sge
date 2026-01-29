@@ -1,0 +1,9 @@
+[29/01/2026 13:13:14] ------------------------------------------------
+[29/01/2026 13:13:14] Webhook recebido: {"pix":[{"txid":"SGE000000000000000000000000846","chave":"32543264000188","endToEndId":"E32543264202301010000","valor":"9.99","horario":"2026-01-29T16:13:14.000Z"}]}
+[29/01/2026 13:13:14] CRITICAL ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'method' in 'SET'
+[29/01/2026 13:13:16] ------------------------------------------------
+[29/01/2026 13:13:16] Webhook recebido: {"pix":[{"txid":"SGE000000000000000000000000846","chave":"32543264000188","endToEndId":"E32543264202301010000","valor":"9.99","horario":"2026-01-29T16:13:16.000Z"}]}
+[29/01/2026 13:13:16] CRITICAL ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'method' in 'SET'
+[29/01/2026 13:14:51] ------------------------------------------------
+[29/01/2026 13:14:51] Webhook recebido: {"pix":[{"txid":"SGE000000000000000000000000846","chave":"32543264000188","endToEndId":"E32543264202301010000","valor":"9.99","horario":"2026-01-29T16:14:51.000Z"}]}
+[29/01/2026 13:14:51] SUCESSO: Pagamento #846 (Isabel Nishimura Abreu) confirmado! Valor: R$ 9.99

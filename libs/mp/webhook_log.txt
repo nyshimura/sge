@@ -26,3 +26,7 @@
 [2026-01-22 00:25:56] ------------------------------------------------
 [2026-01-22 00:25:56] Notification Received. Payment ID MP: 142883914742
 [2026-01-22 00:25:56] Status MP: cancelled | Ref Local: 525
+[2026-01-29 10:37:53] SIMULATION TEST RECEIVED. ID: 123456 - Ignored successfully.
+[2026-01-29 10:39:48] ------------------------------------------------
+[2026-01-29 10:39:48] Notification Received. Payment ID MP: 143960967100
+[2026-01-29 10:39:48] Status MP: pending | Ref Local: 846
