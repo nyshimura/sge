@@ -1,22 +1,24 @@
 <?php
 /**
  * libs/auto_migrate.php
- * Sistema de Atualização Automática (Blindado contra erros de sintaxe)
+ * Sistema de Atualização Manual Controlada (Migrations Explícitas)
  */
 
+if (ob_get_length()) ob_clean();
 ob_start();
+
 set_time_limit(300);
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
 
-// --- CONFIGURAÇÕES ---
+// Configurações GitHub (apenas para exibir versão, não baixa SQL mais)
 define('GITHUB_USER',   'nyshimura');      
 define('GITHUB_REPO',   'sge');  
 define('GITHUB_BRANCH', 'main');             
 define('GITHUB_TOKEN',  ''); 
 
-// Conexão
+// Conexão DB
 $conn = null;
 if (file_exists(__DIR__ . '/../config/database.php')) {
     require_once __DIR__ . '/../config/database.php';
@@ -34,7 +36,193 @@ function addLog(&$resp, $msg, $type = 'info') {
     $resp['logs'][] = ['msg' => $msg, 'type' => $type];
 }
 
-// --- FUNÇÕES DE DOWNLOAD (Resumidas para focar na correção do SQL) ---
+// --- LISTA MESTRA DE ATUALIZAÇÕES ---
+// Adicione suas novas alterações no final desta lista
+function getMigrations() {
+    return [
+        // --- 1. CONFIGURAÇÕES GERAIS (TERMOS E MERCADO PAGO) ---
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'term_text_adult',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN term_text_adult text DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'term_text_minor',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN term_text_minor text DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'mp_client_id',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN mp_client_id VARCHAR(255) NULL AFTER mp_access_token"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'mp_client_secret',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN mp_client_secret VARCHAR(255) NULL AFTER mp_client_id"
+        ],
+
+        // --- 2. CONFIGURAÇÕES BANCO INTER ---
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'inter_active',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN inter_active tinyint(1) DEFAULT 0"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'inter_client_id',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN inter_client_id varchar(255) DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'inter_client_secret',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN inter_client_secret varchar(255) DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'inter_cert_file',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN inter_cert_file varchar(255) DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'inter_key_file',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN inter_key_file varchar(255) DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'inter_sandbox',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN inter_sandbox tinyint(1) DEFAULT 0"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'system_settings',
+            'column' => 'inter_webhook_crt',
+            'sql' => "ALTER TABLE system_settings ADD COLUMN inter_webhook_crt varchar(255) DEFAULT NULL"
+        ],
+
+        // --- 3. TABELA PAGAMENTOS (Integrações) ---
+        [
+            'type' => 'column',
+            'table' => 'payments',
+            'column' => 'method',
+            'sql' => "ALTER TABLE `payments` ADD COLUMN `method` varchar(50) DEFAULT NULL AFTER `paymentDate`"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'payments',
+            'column' => 'transaction_code',
+            'sql' => "ALTER TABLE `payments` ADD COLUMN `transaction_code` varchar(50) DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'payments',
+            'column' => 'mp_payment_id',
+            'sql' => "ALTER TABLE `payments` ADD COLUMN `mp_payment_id` VARCHAR(50) NULL DEFAULT NULL AFTER `paymentDate`"
+        ],
+
+        // --- 4. TABELA CURSOS E CERTIFICADOS ---
+        [
+            'type' => 'column',
+            'table' => 'courses',
+            'column' => 'thumbnail',
+            'sql' => "ALTER TABLE courses ADD COLUMN thumbnail LONGTEXT DEFAULT NULL"
+        ],
+        [
+            'type' => 'column',
+            'table' => 'certificates',
+            'column' => 'custom_workload',
+            'sql' => "ALTER TABLE certificates ADD COLUMN custom_workload VARCHAR(50) DEFAULT NULL AFTER completion_date"
+        ],
+
+        // --- 5. NOVA TABELA: SCHOOL_RECESS ---
+        [
+            'type' => 'create_table',
+            'table' => 'school_recess',
+            'sql' => "CREATE TABLE IF NOT EXISTS school_recess (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        start_date DATE NOT NULL,
+                        end_date DATE NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+        ],
+
+        // --- 6. NOVA TABELA: COURSE_TEACHERS (Com Chaves Estrangeiras) ---
+        [
+            'type' => 'create_table',
+            'table' => 'course_teachers',
+            'sql' => "CREATE TABLE IF NOT EXISTS `course_teachers` (
+                        `id` int(11) NOT NULL AUTO_INCREMENT,
+                        `courseId` int(11) NOT NULL,
+                        `teacherId` int(11) NOT NULL,
+                        `commissionRate` decimal(5,2) DEFAULT 0.00,
+                        `createdAt` timestamp NULL DEFAULT current_timestamp(),
+                        PRIMARY KEY (`id`),
+                        KEY `courseId` (`courseId`),
+                        KEY `teacherId` (`teacherId`),
+                        CONSTRAINT `course_teachers_ibfk_1` FOREIGN KEY (`courseId`) REFERENCES `courses` (`id`) ON DELETE CASCADE,
+                        CONSTRAINT `course_teachers_ibfk_2` FOREIGN KEY (`teacherId`) REFERENCES `users` (`id`) ON DELETE CASCADE
+                      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+        ]
+    ];
+}
+
+// --- EXECUTOR (ENGINE) ---
+function runMigrations($conn, &$resp) {
+    addLog($resp, "Iniciando atualizações...", 'info');
+    
+    $migrations = getMigrations();
+
+    foreach ($migrations as $mig) {
+        $table = $mig['table'];
+        $sql   = $mig['sql'];
+        $type  = $mig['type'];
+
+        try {
+            // TIPO 1: ADICIONAR COLUNA
+            if ($type === 'column') {
+                $col = $mig['column'];
+                
+                // Verifica se tabela existe antes
+                $stmtTable = $conn->query("SHOW TABLES LIKE '$table'");
+                if ($stmtTable->rowCount() == 0) continue; 
+
+                // Verifica se a coluna JÁ existe
+                $stmtCol = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$col'");
+                
+                if ($stmtCol->rowCount() == 0) {
+                    $conn->exec($sql);
+                    addLog($resp, "Coluna criada: $col em $table", 'success');
+                }
+            }
+            
+            // TIPO 2: CRIAR TABELA NOVA
+            elseif ($type === 'create_table') {
+                $stmtTable = $conn->query("SHOW TABLES LIKE '$table'");
+                if ($stmtTable->rowCount() == 0) {
+                    $conn->exec($sql);
+                    addLog($resp, "Tabela criada: $table", 'success');
+                }
+            }
+
+        } catch (Exception $e) {
+            // Se der erro, loga mas continua (pode ser chave duplicada ou erro menor)
+            addLog($resp, "Erro em $table: " . $e->getMessage(), 'error');
+        }
+    }
+}
+
+// --- RODAPÉ DE VERSÕES (AUXILIAR) ---
 function getLocalVersion() {
     $path = __DIR__ . '/../package.json';
     return file_exists($path) ? (json_decode(file_get_contents($path), true)['version'] ?? '0.0.0') : '0.0.0';
@@ -45,110 +233,27 @@ function getRemoteVersion() {
     $c = @file_get_contents($url, false, $ctx);
     return $c ? (json_decode($c, true)['version'] ?? null) : null;
 }
-function downloadAndExtractUpdate(&$resp) {
-    // ... (Mantendo a lógica de download original para economizar espaço aqui) ...
-    // Se precisar dessa parte completa novamente, me avise. O foco agora é o fix do SQL.
-    addLog($resp, "Função de download ignorada neste fix (foco no SQL).", 'info');
-    return true; 
-}
-
-// --- CORREÇÃO PRINCIPAL: PARSER SQL MAIS INTELIGENTE ---
-
-function syncDatabaseFromSql($conn, &$resp) {
-    $sqlFile = __DIR__ . '/../database.sql';
-
-    if (!file_exists($sqlFile)) {
-        addLog($resp, "Arquivo database.sql não encontrado na raiz.", 'warning');
-        return;
-    }
-
-    $sqlContent = file_get_contents($sqlFile);
-    
-    // 1. Extrai as tabelas (CREATE TABLE)
-    preg_match_all('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(\w+)`?\s*\((.*)\)\s*(?:ENGINE|DEFAULT|CHARSET|;)/sUi', $sqlContent, $matches);
-
-    if (empty($matches[0])) {
-        addLog($resp, "Nenhuma tabela encontrada no database.sql.", 'warning');
-        return;
-    }
-
-    foreach ($matches[1] as $idx => $tableName) {
-        $tableBody = $matches[2][$idx];
-        
-        try {
-            // Verifica se a tabela existe
-            $stmt = $conn->query("SHOW TABLES LIKE '$tableName'");
-            
-            // A. CRIA TABELA SE NÃO EXISTIR
-            if ($stmt->rowCount() == 0) {
-                $createQuery = "CREATE TABLE IF NOT EXISTS `$tableName` ($tableBody) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
-                $conn->exec($createQuery);
-                addLog($resp, "Tabela criada: $tableName", 'success');
-                continue;
-            }
-
-            // B. VERIFICA COLUNAS
-            // Regex ajustada para evitar linhas vazias ou chaves
-            preg_match_all('/^\s*`(\w+)`\s+(.*?),?$/m', $tableBody, $colMatches);
-
-            foreach ($colMatches[1] as $cIdx => $colName) {
-                // FILTRO DE SEGURANÇA: Ignora palavras reservadas que não são colunas
-                $upperName = strtoupper($colName);
-                if (in_array($upperName, ['PRIMARY', 'KEY', 'CONSTRAINT', 'UNIQUE', 'FOREIGN', 'INDEX', 'FULLTEXT'])) continue;
-
-                $colDef = trim($colMatches[2][$cIdx]);
-                // Remove vírgula final
-                if (substr($colDef, -1) == ',') $colDef = substr($colDef, 0, -1);
-                $colDef = trim($colDef);
-
-                // PROTEÇÃO: Se a definição estiver vazia, pula (evita o erro Syntax error near '')
-                if (empty($colDef)) {
-                    // addLog($resp, "Ignorando linha mal formatada em $tableName: $colName", 'warning');
-                    continue;
-                }
-
-                // Verifica se a coluna já existe no banco
-                $stmtCol = $conn->query("SHOW COLUMNS FROM `$tableName` LIKE '$colName'");
-                
-                if ($stmtCol->rowCount() == 0) {
-                    $alterSQL = "ALTER TABLE `$tableName` ADD COLUMN `$colName` $colDef";
-                    
-                    try {
-                        $conn->exec($alterSQL);
-                        addLog($resp, "Coluna adicionada: $colName em $tableName", 'success');
-                    } catch (Exception $sqlErr) {
-                        // Loga o comando exato que falhou para debug
-                        addLog($resp, "Erro ao adicionar $colName. Cmd: \"$alterSQL\". Erro: " . $sqlErr->getMessage(), 'error');
-                    }
-                }
-            }
-
-        } catch (Exception $e) {
-            addLog($resp, "Erro ao processar tabela $tableName: " . $e->getMessage(), 'error');
-        }
-    }
-}
 
 // --- EXECUÇÃO ---
+
+try {
+    $response['version_local'] = getLocalVersion();
+    $remote = getRemoteVersion();
+    $response['version_remote'] = $remote ?: '---';
+} catch (Exception $e) {}
 
 $action = $_GET['action'] ?? '';
 
 try {
-    if ($action == 'update_system') {
-        // downloadAndExtractUpdate($response); // Comentado para focar no teste do SQL
-    }
-
     if ($conn) {
-        addLog($response, "Sincronizando banco...", 'info');
-        syncDatabaseFromSql($conn, $response);
+        runMigrations($conn, $response);
     } else {
-        addLog($response, "Sem conexão com Banco.", 'error');
+        addLog($response, "Sem conexão DB.", 'error');
     }
-
     $response['success'] = true;
 
 } catch (Exception $e) {
-    addLog($response, "Erro Fatal: " . $e->getMessage(), 'error');
+    addLog($response, "Fatal: " . $e->getMessage(), 'error');
 }
 
 ob_end_clean();
