@@ -49,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // D. SALVAR CONFIGURAÇÕES GERAIS
     elseif (isset($_POST['action']) && $_POST['action'] === 'save_settings') {
         try {
+            // 1. Atualiza System Settings (Configurações Gerais)
             $fields = [
                 'site_url', 'language', 'timeZone', 'currencySymbol',
                 'smtpServer', 'smtpPort', 'smtpUser', 'smtpPass', 
@@ -56,32 +57,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 'email_reset_subject', 'email_reset_body',
                 'email_reminder_subject', 'email_reminder_body',
                 
-                // --- CAMPOS DE CONTRATO ---
-                'enrollmentContractText', // Contrato Geral
-                'term_text_adult',        // Novo: Termo Adulto
-                'term_text_minor',        // Novo: Termo Menor
+                // Contratos
+                'enrollmentContractText', 
+                'term_text_adult', 
+                'term_text_minor', 
                 'certificate_template_text', 
-                'imageTermsText',         // Mantido por compatibilidade
+                'imageTermsText', 
                 
                 'geminiApiKey', 'geminiApiEndpoint',
                 'dbHost', 'dbUser', 'dbPass', 'dbName', 'dbPort',
+                
+                // Pagamentos (APIs)
                 'mp_public_key', 'mp_access_token', 'mp_client_id', 'mp_client_secret',
+                'inter_client_id', 'inter_client_secret'
             ];
+            
             $sql = "UPDATE system_settings SET ";
             $params = [];
             foreach ($fields as $field) { $sql .= "$field = :$field, "; $params[":$field"] = $_POST[$field] ?? ''; }
             
+            // Checkboxes
             $sql .= "enableTerminationFine = :enableTerminationFine, ";
             $params[':enableTerminationFine'] = isset($_POST['enableTerminationFine']) ? 1 : 0;
+            
             $sql .= "mp_active = :mp_active, ";
             $params[':mp_active'] = isset($_POST['mp_active']) ? 1 : 0;
+
+            $sql .= "inter_active = :inter_active, ";
+            $params[':inter_active'] = isset($_POST['inter_active']) ? 1 : 0;
+
+            $sql .= "inter_sandbox = :inter_sandbox, ";
+            $params[':inter_sandbox'] = isset($_POST['inter_sandbox']) ? 1 : 0;
+
+            // Campos Numéricos
             $sql .= "terminationFineMonths = :terminationFineMonths, ";
             $params[':terminationFineMonths'] = (int)($_POST['terminationFineMonths'] ?? 0);
+            
             $sql .= "defaultDueDay = :defaultDueDay, ";
             $params[':defaultDueDay'] = (int)($_POST['defaultDueDay'] ?? 10);
+            
             $sql .= "reminderDaysBefore = :reminderDaysBefore "; 
             $params[':reminderDaysBefore'] = (int)($_POST['reminderDaysBefore'] ?? 3);
 
+            // Upload Imagem Certificado (Visual)
             if (isset($_FILES['certificate_bg']) && $_FILES['certificate_bg']['error'] == 0) {
                 $allowed = ['jpg', 'jpeg', 'png'];
                 $ext = strtolower(pathinfo($_FILES['certificate_bg']['name'], PATHINFO_EXTENSION));
@@ -91,9 +109,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $params[':cert_img'] = 'data:image/' . $ext . ';base64,' . base64_encode($data);
                 }
             }
+
+            // --- UPLOAD CERTIFICADOS INTER (CRT, KEY e WEBHOOK CA) ---
+            $certDir = __DIR__ . '/../certs/';
+            if (!is_dir($certDir)) mkdir($certDir, 0755, true);
+
+            $ambiente = isset($_POST['inter_sandbox']) ? 'Sandbox' : 'Prod';
+
+            // Arquivo .crt (Aplicação)
+            if (isset($_FILES['inter_cert_file']) && $_FILES['inter_cert_file']['error'] == 0) {
+                $fName = 'Inter_' . $ambiente . '_' . time() . '.crt'; 
+                if (move_uploaded_file($_FILES['inter_cert_file']['tmp_name'], $certDir . $fName)) {
+                    $sql .= ", inter_cert_file = :inter_crt";
+                    $params[':inter_crt'] = $fName;
+                }
+            }
+            // Arquivo .key (Chave Privada)
+            if (isset($_FILES['inter_key_file']) && $_FILES['inter_key_file']['error'] == 0) {
+                $fName = 'Inter_' . $ambiente . '_' . time() . '.key';
+                if (move_uploaded_file($_FILES['inter_key_file']['tmp_name'], $certDir . $fName)) {
+                    $sql .= ", inter_key_file = :inter_key";
+                    $params[':inter_key'] = $fName;
+                }
+            }
+            // Arquivo ca.crt (Webhook) - NOVO!
+            if (isset($_FILES['inter_webhook_crt']) && $_FILES['inter_webhook_crt']['error'] == 0) {
+                $fName = 'Inter_Webhook_CA_' . time() . '.crt';
+                if (move_uploaded_file($_FILES['inter_webhook_crt']['tmp_name'], $certDir . $fName)) {
+                    $sql .= ", inter_webhook_crt = :webhook_crt";
+                    $params[':webhook_crt'] = $fName;
+                }
+            }
+
             $sql .= " WHERE id = 1"; 
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
+
+            // 2. Atualiza School Profile (Chave Pix Manual)
+            if (isset($_POST['manual_pix_key'])) {
+                $updSchool = $pdo->prepare("UPDATE school_profile SET pixKey = ? WHERE id = 1");
+                $updSchool->execute([$_POST['manual_pix_key']]);
+            }
+
             $msg = '<div class="alert alert-success">Configurações salvas com sucesso!</div>';
         } catch (PDOException $e) { $msg = '<div class="alert alert-danger">Erro: ' . $e->getMessage() . '</div>'; }
     }
@@ -105,6 +162,8 @@ if (!$settings) {
     $pdo->query("INSERT INTO system_settings (id, site_url) VALUES (1, 'http://localhost')");
     $settings = $pdo->query("SELECT * FROM system_settings WHERE id = 1")->fetch();
 }
+
+$schoolProfile = $pdo->query("SELECT * FROM school_profile WHERE id = 1")->fetch();
 $recessList = $pdo->query("SELECT * FROM school_recess ORDER BY start_date DESC")->fetchAll();
 
 // Placeholders
@@ -138,6 +197,7 @@ function renderToolbar($targetId) {
         <button class="settings-tab-link" onclick="openTab(event, 'tab-email')"><i class="fas fa-envelope"></i> E-mail</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-docs')"><i class="fas fa-file-contract"></i> Docs</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-fin')"><i class="fas fa-wallet"></i> Financeiro</button>
+        <button class="settings-tab-link" onclick="openTab(event, 'tab-pagamentos')"><i class="fas fa-hand-holding-usd"></i> Pagamentos</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-api')"><i class="fas fa-plug"></i> Integrações</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-system')"><i class="fas fa-sync"></i> Sistema</button>
     </div>
@@ -241,10 +301,6 @@ function renderToolbar($targetId) {
 
             <div class="section-block" style="margin-top: 20px;">
                 <h4 class="section-title"><i class="fas fa-camera"></i> Termos de Uso de Imagem</h4>
-                <p style="color:#666; font-size:0.9rem; margin-bottom:15px;">
-                    Preencha os dois modelos abaixo. O sistema escolherá automaticamente com base na idade do aluno.
-                </p>
-
                 <div class="settings-grid">
                     <div class="span-2">
                         <div class="form-group">
@@ -334,35 +390,10 @@ function renderToolbar($targetId) {
                 </div>
             </div>
 
-            <div class="section-block" style="border-left: 4px solid #009ee3;">
-                <h4 class="section-title" style="color:#009ee3;"><i class="fas fa-handshake"></i> Mercado Pago</h4>
-                <div style="margin-bottom: 20px;">
-                    <label style="cursor:pointer; font-weight:bold; display:flex; align-items:center; gap:8px;">
-                        <input type="checkbox" name="mp_active" value="1" <?php echo $settings['mp_active'] ? 'checked' : ''; ?> style="width:20px; height:20px;">
-                        Ativar Integração
-                    </label>
-                </div>
-                <div class="settings-grid">
-                    <div class="form-group"><label>Public Key</label><input type="text" name="mp_public_key" class="form-control" value="<?php echo htmlspecialchars($settings['mp_public_key']); ?>"></div>
-                    <div class="form-group"><label>Access Token</label><input type="password" name="mp_access_token" class="form-control" value="<?php echo htmlspecialchars($settings['mp_access_token']); ?>"></div>
-                    <div class="form-group"><label>Client ID</label><input type="text" name="mp_client_id" class="form-control" value="<?php echo htmlspecialchars($settings['mp_client_id']); ?>"></div>
-                    <div class="form-group"><label>Client Secret</label><input type="password" name="mp_client_secret" class="form-control" value="<?php echo htmlspecialchars($settings['mp_client_secret']); ?>"></div>
-                </div>
-                <div style="text-align: right; margin-top: 15px;">
-                    <button type="submit" class="btn-save btn-primary">Salvar Financeiro</button>
-                </div>
-            </div>
-            
             <div class="section-block highlight-card" style="margin-top: 20px;">
                 <h4 class="section-title" style="color:#2c3e50; display:flex; align-items:center; gap:10px;">
                     <i class="fas fa-calendar-plus" style="color: #3498db;"></i> Ferramentas de Renovação
                 </h4>
-                
-                <p style="color: #666; font-size: 0.9rem; line-height: 1.5; margin-bottom: 15px;">
-                    Gera automaticamente os carnês de pagamento (Jan a Dez) para <b>todos os alunos com matrícula aprovada</b>.
-                    <br><i class="fas fa-info-circle" style="color:#3498db;"></i> O sistema verifica mês a mês e <b>não duplica</b> cobranças existentes.
-                </p>
-
                 <div id="renewLayoutSection">
                     <div style="display: flex; gap: 10px; align-items: flex-end; max-width: 400px;">
                         <div style="flex: 1;">
@@ -375,23 +406,98 @@ function renderToolbar($targetId) {
                     </div>
                 </div>
             </div>
+            <div style="text-align: right; margin-top: 15px;">
+                <button type="submit" class="btn-save btn-primary">Salvar Regras</button>
+            </div>
         </div>
-    </form>
 
-    <div id="tab-api" class="tab-content">
-        <form method="POST">
-            <input type="hidden" name="action" value="save_settings">
-            <div class="section-block">
-                <h4 class="section-title"><i class="fas fa-brain"></i> IA (Google Gemini)</h4>
+        <div id="tab-pagamentos" class="tab-content">
+            
+            <div class="section-block" style="border-left: 4px solid #ff7900; background-color: #fffaf0;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <h4 class="section-title" style="color:#ff7900; margin:0;"><i class="fas fa-university"></i> Banco Inter (API v2)</h4>
+                        
+                        <label class="switch-label" style="font-size:0.8rem; margin-left: 15px;">
+                            <input type="checkbox" name="inter_sandbox" value="1" <?php echo $settings['inter_sandbox'] ? 'checked' : ''; ?>>
+                            <span class="slider-round" style="width:34px; height:20px;"></span> 
+                            <span style="margin-left: 5px; color: #d35400;">Modo Sandbox (Teste)</span>
+                        </label>
+                        <style>
+                            input:checked + .slider-round[style*="width:34px"] { background-color: #e67e22; }
+                            input:checked + .slider-round[style*="width:34px"]:before { transform: translateX(14px); }
+                        </style>
+                    </div>
+
+                    <label class="switch-label">
+                        <input type="checkbox" id="check_inter" name="inter_active" value="1" <?php echo $settings['inter_active'] ? 'checked' : ''; ?> onchange="togglePaymentGateway('inter')">
+                        <span class="slider-round"></span>
+                        <span style="margin-left: 5px;">Ativar Integração</span>
+                    </label>
+                </div>
+                <hr>
                 <div class="settings-grid">
-                    <div class="form-group"><label>API Key</label><input type="password" name="geminiApiKey" class="form-control" value="<?php echo htmlspecialchars($settings['geminiApiKey']); ?>"></div>
-                    <div class="form-group"><label>Endpoint</label><input type="text" name="geminiApiEndpoint" class="form-control" value="<?php echo htmlspecialchars($settings['geminiApiEndpoint']); ?>"></div>
+                    <div class="form-group"><label>Client ID</label><input type="text" name="inter_client_id" class="form-control" value="<?php echo htmlspecialchars($settings['inter_client_id'] ?? ''); ?>"></div>
+                    <div class="form-group"><label>Client Secret</label><input type="password" name="inter_client_secret" class="form-control" value="<?php echo htmlspecialchars($settings['inter_client_secret'] ?? ''); ?>"></div>
+                    
+                    <div class="form-group">
+                        <label>Certificado (.crt)</label>
+                        <?php if(!empty($settings['inter_cert_file'])): ?> <small style="color:green;"><i class="fas fa-check"></i> Enviado</small> <?php endif; ?>
+                        <input type="file" name="inter_cert_file" class="form-control" accept=".crt">
+                    </div>
+                    <div class="form-group">
+                        <label>Chave (.key)</label>
+                        <?php if(!empty($settings['inter_key_file'])): ?> <small style="color:green;"><i class="fas fa-check"></i> Enviado</small> <?php endif; ?>
+                        <input type="file" name="inter_key_file" class="form-control" accept=".key">
+                    </div>
+                    
+                    <div class="form-group span-2">
+                        <label>Certificado Webhook (ca.crt) <small style="font-weight:normal; color:#666;">(Opcional para mTLS)</small></label>
+                        <?php if(!empty($settings['inter_webhook_crt'])): ?> <small style="color:green;"><i class="fas fa-check"></i> Enviado</small> <?php endif; ?>
+                        <input type="file" name="inter_webhook_crt" class="form-control" accept=".crt">
+                    </div>
+                </div>
+                <small style="color:#d35400;">* Ao trocar entre Sandbox e Produção, lembre-se de atualizar o Client ID, Secret e reenviar os certificados.</small>
+            </div>
+
+            <div class="section-block" style="border-left: 4px solid #009ee3; background-color: #f0faff; margin-top: 20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 class="section-title" style="color:#009ee3; margin:0;"><i class="fas fa-handshake"></i> Mercado Pago</h4>
+                    <label class="switch-label">
+                        <input type="checkbox" id="check_mp" name="mp_active" value="1" <?php echo $settings['mp_active'] ? 'checked' : ''; ?> onchange="togglePaymentGateway('mp')">
+                        <span class="slider-round"></span>
+                        <span style="margin-left: 5px;">Ativar Integração</span>
+                    </label>
+                </div>
+                <hr>
+                <div class="settings-grid">
+                    <div class="form-group"><label>Public Key</label><input type="text" name="mp_public_key" class="form-control" value="<?php echo htmlspecialchars($settings['mp_public_key']); ?>"></div>
+                    <div class="form-group"><label>Access Token</label><input type="password" name="mp_access_token" class="form-control" value="<?php echo htmlspecialchars($settings['mp_access_token']); ?>"></div>
+                    <div class="form-group"><label>Client ID</label><input type="text" name="mp_client_id" class="form-control" value="<?php echo htmlspecialchars($settings['mp_client_id']); ?>"></div>
+                    <div class="form-group"><label>Client Secret</label><input type="password" name="mp_client_secret" class="form-control" value="<?php echo htmlspecialchars($settings['mp_client_secret']); ?>"></div>
                 </div>
             </div>
 
-            <div class="section-block" style="border-left: 4px solid #e74c3c;">
-                <h4 class="section-title" style="color:#e74c3c;"><i class="fas fa-database"></i> Banco de Dados</h4>
+            <div class="section-block" style="border-left: 4px solid #7f8c8d; margin-top: 20px;">
+                <h4 class="section-title" style="color:#7f8c8d;"><i class="fas fa-qrcode"></i> Pix Manual / Estático</h4>
+                <div class="form-group">
+                    <label>Chave Pix (CPF, CNPJ, Email ou Aleatória)</label>
+                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($schoolProfile['pixKey'] ?? ''); ?>" readonly style="background-color: #e9ecef; cursor: not-allowed; color: #555;">
+                    <small style="color:#666; font-size:0.85rem; margin-top:5px; display:block;"><i class="fas fa-lock"></i> Gerenciado no menu <strong>Perfil da Escola</strong>.</small>
+                </div>
+            </div>
+
+            <div style="text-align: right; margin-top: 15px;">
+                <button type="submit" class="btn-save btn-primary">Salvar Configurações de Pagamento</button>
+            </div>
+        </div>
+
+        <div id="tab-api" class="tab-content">
+            <div class="section-block">
+                <h4 class="section-title"><i class="fas fa-brain"></i> IA e Banco de Dados</h4>
                 <div class="settings-grid">
+                    <div class="form-group"><label>API Key</label><input type="password" name="geminiApiKey" class="form-control" value="<?php echo htmlspecialchars($settings['geminiApiKey']); ?>"></div>
+                    <div class="form-group"><label>Endpoint</label><input type="text" name="geminiApiEndpoint" class="form-control" value="<?php echo htmlspecialchars($settings['geminiApiEndpoint']); ?>"></div>
                     <div class="form-group span-2"><label>Host</label><input type="text" name="dbHost" class="form-control" value="<?php echo htmlspecialchars($settings['dbHost']); ?>"></div>
                     <div class="form-group"><label>Nome do Banco</label><input type="text" name="dbName" class="form-control" value="<?php echo htmlspecialchars($settings['dbName']); ?>"></div>
                     <div class="form-group"><label>Usuário</label><input type="text" name="dbUser" class="form-control" value="<?php echo htmlspecialchars($settings['dbUser']); ?>"></div>
@@ -402,145 +508,111 @@ function renderToolbar($targetId) {
                     <button type="submit" class="btn-save btn-primary">Salvar Integrações</button>
                 </div>
             </div>
-        </form>
-    </div>
+        </div>
 
-    <div id="tab-system" class="tab-content">
-        <div class="section-block" style="border-left: 4px solid #6f42c1; background-color: #f9f2ff;">
-            <h4 class="section-title" style="color: #6f42c1;">
-                <i class="fas fa-sync-alt"></i> Atualização do Sistema
-            </h4>
-            <p style="color: #666; font-size: 0.9rem; margin-bottom: 15px;">
-                Verifica atualizações no GitHub e sincroniza o banco de dados. 
-                <strong>config/database.php</strong> é preservado.
-            </p>
+        <div id="tab-system" class="tab-content">
+            <div class="section-block" style="border-left: 4px solid #6f42c1; background-color: #f9f2ff;">
+                <h4 class="section-title" style="color: #6f42c1;">
+                    <i class="fas fa-sync-alt"></i> Atualização do Sistema
+                </h4>
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 15px;">
+                    Verifica atualizações no GitHub e sincroniza o banco de dados. 
+                    <strong>config/database.php</strong> é preservado.
+                </p>
 
-            <div style="display: flex; gap: 10px; align-items: center;">
-                
-                <button type="button" onclick="openMigrationModal('check_db')" class="btn-secondary" style="border:1px solid #ccc; background:#fff; color:#333; padding: 10px 15px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-                    <i class="fas fa-database"></i> <span>Verificar Banco de Dados</span>
-                </button>
-
-                <button type="button" onclick="openMigrationModal('update_system')" class="btn-primary" style="background-color: #6f42c1; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px;">
-                    <i class="fab fa-github"></i> <span>Buscar Atualizações (GitHub)</span>
-                </button>
-
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button type="button" onclick="openMigrationModal('check_db')" class="btn-secondary" style="border:1px solid #ccc; background:#fff; color:#333; padding: 10px 15px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <i class="fas fa-database"></i> <span>Verificar Banco de Dados</span>
+                    </button>
+                    <button type="button" onclick="openMigrationModal('update_system')" class="btn-primary" style="background-color: #6f42c1; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px;">
+                        <i class="fab fa-github"></i> <span>Buscar Atualizações (GitHub)</span>
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div id="tab-calendario" class="tab-content">
-        <div class="section-block">
-            <h4 class="section-title"><i class="far fa-calendar-plus"></i> Novo Recesso/Feriado</h4>
-            <form method="POST" action="">
+        <div id="tab-calendario" class="tab-content">
+            <div class="section-block">
+                <h4 class="section-title"><i class="far fa-calendar-plus"></i> Novo Recesso/Feriado</h4>
                 <div class="settings-grid">
                     <div class="span-2">
                         <div class="form-group">
                             <label>Nome do Evento</label>
-                            <input type="text" name="recess_name" class="form-control" placeholder="Ex: Feriado Nacional" required>
+                            <input type="text" name="recess_name" class="form-control" placeholder="Ex: Feriado Nacional">
                         </div>
                     </div>
                     <div class="form-group">
                         <label>Início</label>
-                        <input type="date" name="recess_start" class="form-control" required>
+                        <input type="date" name="recess_start" class="form-control">
                     </div>
                     <div class="form-group">
                         <label>Fim</label>
-                        <input type="date" name="recess_end" class="form-control" required>
+                        <input type="date" name="recess_end" class="form-control">
                     </div>
                 </div>
                 <div style="text-align: right;">
                     <button type="submit" name="add_recess" class="btn-save btn-primary">Adicionar ao Calendário</button>
                 </div>
-            </form>
-        </div>
+            </div>
 
-        <div class="section-block" style="padding:0; overflow:hidden;">
-            <div class="table-responsive">
-                <table class="custom-table">
-                    <thead style="background: #f8f9fa;">
-                        <tr>
-                            <th style="padding:15px;">Nome</th>
-                            <th style="padding:15px;">Início</th>
-                            <th style="padding:15px;">Fim</th>
-                            <th style="padding:15px; text-align:right;">Ação</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (count($recessList) > 0): ?>
-                            <?php foreach ($recessList as $rec): ?>
-                                <tr>
-                                    <td style="padding:15px;"><?php echo htmlspecialchars($rec['name']); ?></td>
-                                    <td style="padding:15px;"><?php echo date('d/m/Y', strtotime($rec['start_date'])); ?></td>
-                                    <td style="padding:15px;"><?php echo date('d/m/Y', strtotime($rec['end_date'])); ?></td>
-                                    <td style="padding:15px; text-align:right;">
-                                        <form method="POST" onsubmit="return confirm('Remover?');" style="display:inline;">
-                                            <input type="hidden" name="delete_recess_id" value="<?php echo $rec['id']; ?>">
-                                            <button type="submit" style="background:none; border:none; color:#e74c3c; cursor:pointer;"><i class="fas fa-trash"></i></button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr><td colspan="4" style="text-align:center; padding:20px; color:#999;">Nenhum registro.</td></tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+            <div class="section-block" style="padding:0; overflow:hidden;">
+                <div class="table-responsive">
+                    <table class="custom-table">
+                        <thead style="background: #f8f9fa;">
+                            <tr>
+                                <th style="padding:15px;">Nome</th>
+                                <th style="padding:15px;">Início</th>
+                                <th style="padding:15px;">Fim</th>
+                                <th style="padding:15px; text-align:right;">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (count($recessList) > 0): ?>
+                                <?php foreach ($recessList as $rec): ?>
+                                    <tr>
+                                        <td style="padding:15px;"><?php echo htmlspecialchars($rec['name']); ?></td>
+                                        <td style="padding:15px;"><?php echo date('d/m/Y', strtotime($rec['start_date'])); ?></td>
+                                        <td style="padding:15px;"><?php echo date('d/m/Y', strtotime($rec['end_date'])); ?></td>
+                                        <td style="padding:15px; text-align:right;">
+                                            <button type="submit" name="delete_recess_id" value="<?php echo $rec['id']; ?>" style="background:none; border:none; color:#e74c3c; cursor:pointer;" onclick="return confirm('Remover?')"><i class="fas fa-trash"></i></button>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr><td colspan="4" style="text-align:center; padding:20px; color:#999;">Nenhum registro.</td></tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-    </div>
-
+    </form>
 </div>
 
 <div id="migrationModal" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 10000;">
     <div class="modal-card" style="width: 600px; max-width: 90%; background: #2d3436; color: #dfe6e9; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-        
         <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #636e72;">
-            <h3 style="margin: 0; color: #00cec9; font-family: monospace;">
-                <i class="fas fa-terminal"></i> System Updater
-            </h3>
-            <button onclick="closeMigrationModal()" style="background: none; border: none; color: #ff7675; font-size: 1.2rem; cursor: pointer;">
-                <i class="fas fa-times"></i>
-            </button>
+            <h3 style="margin: 0; color: #00cec9; font-family: monospace;"><i class="fas fa-terminal"></i> System Updater</h3>
+            <button type="button" onclick="closeMigrationModal()" style="background: none; border: none; color: #ff7675; font-size: 1.2rem; cursor: pointer;"><i class="fas fa-times"></i></button>
         </div>
-
         <div id="migrationContent" style="height: 300px; overflow-y: auto; padding: 15px; font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.5;">
-            <div style="text-align: center; margin-top: 100px;">
-                <i class="fas fa-circle-notch fa-spin fa-2x"></i><br>Inicializando...
-            </div>
+            <div style="text-align: center; margin-top: 100px;"><i class="fas fa-circle-notch fa-spin fa-2x"></i><br>Inicializando...</div>
         </div>
-
         <div class="modal-footer" style="padding-top: 15px; border-top: 1px solid #636e72; text-align: right;">
-            <button id="btnForceUpdate" onclick="runMigration('update_system', true)" style="display: none; background: #e67e22; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-right: 10px;">
-                <i class="fas fa-sync"></i> Forçar Reinstalação
-            </button>
-            <button onclick="closeMigrationModal()" class="btn-primary" style="background: #00cec9; border: none; color: #2d3436; font-weight: bold;">
-                Fechar
-            </button>
+            <button type="button" id="btnForceUpdate" onclick="runMigration('update_system', true)" style="display: none; background: #e67e22; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-right: 10px;"><i class="fas fa-sync"></i> Forçar Reinstalação</button>
+            <button type="button" onclick="closeMigrationModal()" class="btn-primary" style="background: #00cec9; border: none; color: #2d3436; font-weight: bold;">Fechar</button>
         </div>
     </div>
 </div>
 
 <div id="renewConfirmModal" class="modal-overlay" style="display: none; animation: fadeIn 0.3s;">
     <div class="modal-card feedback-card">
-        <div class="modal-icon-wrapper" style="background-color: #fef9e7; color: #f39c12;">
-            <i class="fas fa-exclamation-triangle"></i>
-        </div>
-        
+        <div class="modal-icon-wrapper" style="background-color: #fef9e7; color: #f39c12;"><i class="fas fa-exclamation-triangle"></i></div>
         <h3 class="modal-h3" style="color: #f39c12;">Atenção!</h3>
-        
-        <div class="modal-body-content">
-            Isso irá gerar cobranças para <b>TODOS</b> os alunos ativos para o ano selecionado.<br><br>
-            Deseja realmente continuar?
-        </div>
-
+        <div class="modal-body-content">Isso irá gerar cobranças para <b>TODOS</b> os alunos ativos para o ano selecionado.<br><br>Deseja realmente continuar?</div>
         <div class="modal-actions" style="display: flex; gap: 10px;">
-            <button type="button" class="btn-modal-confirm" onclick="closeRenewModal()" style="background-color: #95a5a6; flex: 1;">
-                Cancelar
-            </button>
-            <button type="button" class="btn-modal-confirm" onclick="confirmRenewSubmission()" style="background-color: #3498db; flex: 1;">
-                Confirmar
-            </button>
+            <button type="button" class="btn-modal-confirm" onclick="closeRenewModal()" style="background-color: #95a5a6; flex: 1;">Cancelar</button>
+            <button type="button" class="btn-modal-confirm" onclick="confirmRenewSubmission()" style="background-color: #3498db; flex: 1;">Confirmar</button>
         </div>
     </div>
 </div>
@@ -554,21 +626,10 @@ function renderToolbar($targetId) {
 ?>
 <div id="feedbackModal" class="modal-overlay" style="display: flex; animation: fadeIn 0.3s;">
     <div class="modal-card feedback-card">
-        <div class="modal-icon-wrapper" style="background-color: <?php echo $bgColor; ?>; color: <?php echo $color; ?>;">
-            <i class="fas <?php echo $icon; ?>"></i>
-        </div>
-        
+        <div class="modal-icon-wrapper" style="background-color: <?php echo $bgColor; ?>; color: <?php echo $color; ?>;"><i class="fas <?php echo $icon; ?>"></i></div>
         <h3 class="modal-h3" style="color: <?php echo $color; ?>;"><?php echo $title; ?></h3>
-        
-        <div class="modal-body-content">
-            <?php echo $renewalResult['msg']; ?>
-        </div>
-
-        <div class="modal-actions">
-            <button type="button" class="btn-modal-confirm" onclick="document.getElementById('feedbackModal').remove()" style="background-color: <?php echo $color; ?>; width: 100%;">
-                Entendido
-            </button>
-        </div>
+        <div class="modal-body-content"><?php echo $renewalResult['msg']; ?></div>
+        <div class="modal-actions"><button type="button" class="btn-modal-confirm" onclick="document.getElementById('feedbackModal').remove()" style="background-color: <?php echo $color; ?>; width: 100%;">Entendido</button></div>
     </div>
 </div>
 <?php endif; ?>
@@ -577,15 +638,22 @@ function renderToolbar($targetId) {
 function openTab(evt, tabName) {
     var i, tabcontent, tablinks;
     tabcontent = document.getElementsByClassName("tab-content");
-    for (i = 0; i < tabcontent.length; i++) {
-        tabcontent[i].classList.remove("active");
-    }
+    for (i = 0; i < tabcontent.length; i++) tabcontent[i].classList.remove("active");
     tablinks = document.getElementsByClassName("settings-tab-link");
-    for (i = 0; i < tablinks.length; i++) {
-        tablinks[i].classList.remove("active");
-    }
+    for (i = 0; i < tablinks.length; i++) tablinks[i].classList.remove("active");
     document.getElementById(tabName).classList.add("active");
     evt.currentTarget.classList.add("active");
+}
+
+function togglePaymentGateway(gateway) {
+    const checkInter = document.getElementById('check_inter');
+    const checkMp = document.getElementById('check_mp');
+
+    if (gateway === 'inter' && checkInter.checked) {
+        checkMp.checked = false; 
+    } else if (gateway === 'mp' && checkMp.checked) {
+        checkInter.checked = false; 
+    }
 }
 
 function insertTagAtCursor(elementId, textToInsert) {
@@ -609,15 +677,10 @@ function wrapText(elementId, tagStart, tagEnd) {
     }
 }
 
-// Funções para o Modal de Confirmação de Renovação
-function openRenewModal() {
-    document.getElementById('renewConfirmModal').style.display = 'flex';
-}
-function closeRenewModal() {
-    document.getElementById('renewConfirmModal').style.display = 'none';
-}
+// Funções de Modal e Migração (Mantidas)
+function openRenewModal() { document.getElementById('renewConfirmModal').style.display = 'flex'; }
+function closeRenewModal() { document.getElementById('renewConfirmModal').style.display = 'none'; }
 function confirmRenewSubmission() {
-    // Cria um form dinâmico para garantir isolamento
     var form = document.createElement("form");
     form.method = "POST";
     form.action = "";
@@ -638,26 +701,17 @@ function confirmRenewSubmission() {
     form.submit();
 }
 
-// --- LÓGICA DO MODAL DE MIGRAÇÃO ---
-
 function openMigrationModal(action) {
     const modal = document.getElementById('migrationModal');
     const content = document.getElementById('migrationContent');
     const btnForce = document.getElementById('btnForceUpdate');
-    
     modal.style.display = 'flex';
-    btnForce.style.display = 'none'; // Esconde botão forçar inicialmente
-    
-    // Mostra loading
+    btnForce.style.display = 'none'; 
     content.innerHTML = '<div style="text-align: center; margin-top: 100px; color: #00cec9;"><i class="fas fa-circle-notch fa-spin fa-3x"></i><br><br>Processando... Por favor, aguarde.</div>';
-
-    // Chama a função real
     runMigration(action, false);
 }
 
-function closeMigrationModal() {
-    document.getElementById('migrationModal').style.display = 'none';
-}
+function closeMigrationModal() { document.getElementById('migrationModal').style.display = 'none'; }
 
 function runMigration(action, force) {
     let url = '../libs/auto_migrate.php?json=1';
@@ -669,27 +723,21 @@ function runMigration(action, force) {
     fetch(url)
     .then(response => response.json())
     .then(data => {
-        content.innerHTML = ''; // Limpa loading
-        
-        // Cabeçalho de Versão
+        content.innerHTML = ''; 
         if (data.version_local) {
             content.innerHTML += `<div style="margin-bottom: 10px; border-bottom: 1px dashed #555; padding-bottom: 5px;">
                 Local: <span style="color: #fab1a0">${data.version_local}</span> | 
                 GitHub: <span style="color: #55efc4">${data.version_remote}</span>
             </div>`;
         }
-
-        // Renderiza Logs
         if (data.logs && data.logs.length > 0) {
             data.logs.forEach(log => {
-                let color = '#dfe6e9'; // Default white
+                let color = '#dfe6e9';
                 let icon = '•';
-                
                 if (log.type === 'success') { color = '#55efc4'; icon = '✓'; }
                 if (log.type === 'error')   { color = '#ff7675'; icon = '✗'; }
                 if (log.type === 'warning') { color = '#ffeaa7'; icon = '!'; }
                 if (log.type === 'info')    { color = '#74b9ff'; icon = 'ℹ'; }
-
                 content.innerHTML += `<div style="color: ${color}; margin-bottom: 3px;">
                     <span style="opacity:0.7; margin-right:5px;">${icon}</span> ${log.msg}
                 </div>`;
@@ -697,17 +745,11 @@ function runMigration(action, force) {
         } else {
             content.innerHTML += '<div style="color: #fab1a0">Nenhum log retornado.</div>';
         }
-
-        // Verifica se precisa mostrar botão de Forçar
         if (action === 'update_system' && !force) {
             const isUpdated = data.logs.some(l => l.msg.includes('já está atualizado'));
-            if (isUpdated) {
-                document.getElementById('btnForceUpdate').style.display = 'inline-block';
-            }
+            if (isUpdated) document.getElementById('btnForceUpdate').style.display = 'inline-block';
         }
-        
         content.scrollTop = content.scrollHeight;
-
     })
     .catch(error => {
         content.innerHTML = `<div style="color: #ff7675; text-align: center; margin-top: 50px;">
@@ -719,40 +761,22 @@ function runMigration(action, force) {
 </script>
 
 <style>
-    /* Estilo Específico do Card de Ano Letivo */
     .highlight-card { border-left: 4px solid #3498db; background: #fdfdfd; }
     .btn-generate { background: #3498db; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: 600; height: 38px; }
     .btn-generate:hover { background: #2980b9; }
-
-    /* CSS ADICIONAL PARA O FEEDBACK */
-    .feedback-card {
-        text-align: center;
-        max-width: 450px !important;
-        padding: 30px !important;
-        border-top: 5px solid transparent;
-    }
+    .feedback-card { text-align: center; max-width: 450px !important; padding: 30px !important; border-top: 5px solid transparent; }
+    .modal-body-content { margin: 15px 0 25px 0; font-size: 1rem; color: #555; line-height: 1.6; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideDown { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .feedback-card { animation: slideDown 0.4s ease-out; }
     
-    .modal-body-content {
-        margin: 15px 0 25px 0;
-        font-size: 1rem;
-        color: #555;
-        line-height: 1.6;
-    }
-
-    /* Animação suave de entrada */
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-    
-    @keyframes slideDown {
-        from { transform: translateY(-20px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-    }
-
-    .feedback-card {
-        animation: slideDown 0.4s ease-out;
-    }
+    /* Estilos Switch */
+    .switch-label { position: relative; display: inline-flex; align-items: center; gap: 12px; cursor: pointer; font-weight: bold; color: #555; user-select: none; }
+    .switch-label input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .slider-round { position: relative; width: 42px; height: 24px; background-color: #ccc; transition: .4s; border-radius: 34px; }
+    .slider-round:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .switch-label input:checked ~ .slider-round { background-color: #27ae60; }
+    .switch-label input:checked ~ .slider-round:before { transform: translateX(18px); }
 </style>
 
 <?php include '../includes/admin_footer.php'; ?>

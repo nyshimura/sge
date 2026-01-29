@@ -1,12 +1,10 @@
 <?php
-// includes/generate_contract_pdf.php
-
 // 1. LIMPEZA DE BUFFER (Obrigatório para FPDF)
 if (ob_get_level()) ob_end_clean();
 ini_set('display_errors', 0);
 error_reporting(E_ALL & ~E_DEPRECATED);
 
-// 2. INICIA SESSÃO
+// 2. INICIA SESSÃO (Garante que $_SESSION esteja disponível)
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -28,32 +26,35 @@ if (!isset($_SESSION['user_id'])) {
     die("Acesso negado. Por favor, faça login.");
 }
 
-// --- 1. IDENTIFICAÇÃO DE PERMISSÃO ---
+// --- 1. IDENTIFICAÇÃO ROBUSTA DE PERMISSÃO ---
 $currentUserId = $_SESSION['user_id'];
 
+// Consulta o banco para ter certeza do cargo do usuário logado (Infalível)
 try {
     $stmtRole = $pdo->prepare("SELECT role FROM users WHERE id = ?");
     $stmtRole->execute([$currentUserId]);
-    $userRoleDb = $stmtRole->fetchColumn(); 
+    $userRoleDb = $stmtRole->fetchColumn(); // Retorna 'admin', 'student', etc.
 } catch (Exception $e) {
     die("Erro ao verificar permissões.");
 }
 
-$targetStudentId = $currentUserId; 
+// Define quem é o aluno alvo do contrato
+$targetStudentId = $currentUserId; // Padrão: o próprio usuário
 
+// Se for Admin/Superadmin E tiver passado um ID na URL, muda o alvo
 if (in_array($userRoleDb, ['admin', 'superadmin']) && isset($_GET['sid'])) {
     $targetStudentId = (int)$_GET['sid'];
 }
 
-// --- 2. RECEBIMENTO DE DADOS ---
+// --- 2. RECEBIMENTO DE DADOS DO CONTRATO ---
 $courseId = isset($_GET['cid']) ? (int)$_GET['cid'] : 0;
 $type = isset($_GET['type']) ? $_GET['type'] : 'contract';
 
 if (!$courseId || !$targetStudentId) {
-    die("Dados insuficientes.");
+    die("Dados insuficientes (Curso ou Aluno faltando).");
 }
 
-// --- 3. BUSCA DADOS ---
+// --- 3. BUSCA DE DADOS DA MATRÍCULA ---
 $sql = "SELECT 
             e.contractAcceptedAt, e.termsAcceptedAt, e.customDueDay, e.customMonthlyFee, e.scholarshipPercentage,
             c.name as courseName, c.monthlyFee as standardFee,
@@ -69,16 +70,34 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute([':cid' => $courseId, ':sid' => $targetStudentId]);
 $data = $stmt->fetch(PDO::FETCH_ASSOC);
 
+// --- DEBUG VISUAL (Se der erro, vai mostrar o motivo exato) ---
 if (!$data) {
-    die("Erro: Matrícula não encontrada.");
+    echo "<h3>Erro: Matrícula não encontrada.</h3>";
+    echo "<ul>";
+    echo "<li><strong>Usuário Logado (ID):</strong> $currentUserId</li>";
+    echo "<li><strong>Perfil Detectado (DB):</strong> $userRoleDb</li>";
+    echo "<li><strong>Tentando acessar Aluno (ID):</strong> $targetStudentId</li>";
+    echo "<li><strong>No Curso (ID):</strong> $courseId</li>";
+    echo "</ul>";
+    echo "<p>Se 'Tentando acessar Aluno' for igual a 'Usuário Logado' mas você clicou em outro aluno, o sistema não reconheceu seu admin.</p>";
+    exit;
 }
 
-// *** ALTERAÇÃO AQUI: Buscando os novos campos de texto ***
-$settings = $pdo->query("SELECT enrollmentContractText, imageTermsText, term_text_adult, term_text_minor FROM system_settings WHERE id = 1")->fetch();
+$settings = $pdo->query("SELECT enrollmentContractText, imageTermsText FROM system_settings WHERE id = 1")->fetch();
 $school = $pdo->query("SELECT * FROM school_profile WHERE id = 1")->fetch();
 
-// --- 4. CÁLCULO DE IDADE E DADOS ---
-// Importante fazer isso ANTES de selecionar o texto
+// --- 4. PREPARAÇÃO DO TEXTO ---
+if ($type == 'terms') {
+    $rawText = $settings['imageTermsText'];
+    $docTitle = "TERMO DE USO DE IMAGEM";
+    $acceptedAt = $data['termsAcceptedAt'];
+} else {
+    $rawText = $settings['enrollmentContractText'];
+    $docTitle = "CONTRATO DE PRESTACAO DE SERVICOS EDUCACIONAIS";
+    $acceptedAt = $data['contractAcceptedAt'];
+}
+
+// Menor de Idade
 $birthDate = new DateTime($data['birthDate']);
 $isMinor = ((new DateTime())->diff($birthDate)->y < 18);
 
@@ -87,7 +106,6 @@ $alunoRG = $data['rg'] ?? '';
 $alunoCPF = $data['cpf'] ?? '';
 $alunoEnd = !empty($data['address']) ? $data['address'] : 'Endereço não informado';
 
-// Define quem é o "Contratante" (Pai se for menor, Aluno se for maior)
 if ($isMinor) {
     $c_nome = strtoupper($data['guardianName']); 
     $c_cpf = $data['guardianCPF']; 
@@ -98,28 +116,7 @@ if ($isMinor) {
     $c_rg = $alunoRG;
 }
 
-// --- 5. SELEÇÃO DO TEXTO INTELIGENTE ---
-if ($type == 'terms') {
-    $docTitle = "TERMO DE USO DE IMAGEM";
-    $acceptedAt = $data['termsAcceptedAt'];
-
-    // LÓGICA DE IDADE PARA O TEXTO
-    if ($isMinor) {
-        // Se existe o texto específico para menor, usa ele. Senão, usa o genérico antigo.
-        $rawText = !empty($settings['term_text_minor']) ? $settings['term_text_minor'] : $settings['imageTermsText'];
-    } else {
-        // Se existe o texto específico para maior, usa ele. Senão, usa o genérico antigo.
-        $rawText = !empty($settings['term_text_adult']) ? $settings['term_text_adult'] : $settings['imageTermsText'];
-    }
-
-} else {
-    // Contrato de Matrícula (Padrão)
-    $docTitle = "CONTRATO DE PRESTACAO DE SERVICOS EDUCACIONAIS";
-    $acceptedAt = $data['contractAcceptedAt'];
-    $rawText = $settings['enrollmentContractText'];
-}
-
-// Financeiro (Para placeholders)
+// Financeiro
 $baseFee = (float)$data['standardFee'];
 $customFee = !empty($data['customMonthlyFee']) ? (float)$data['customMonthlyFee'] : null;
 $scholarship = !empty($data['scholarshipPercentage']) ? (float)$data['scholarshipPercentage'] : 0;
@@ -148,11 +145,10 @@ function dataExtenso($data = null) {
 
 // Placeholders
 $placeholders = [
-    '{{aluno_nome}}' => $alunoNome, '{{aluno_cpf}}' => $alunoCPF, '{{aluno_rg}}' => $alunoRG,
+    '{{aluno_nome}}' => $alunoNome, '{{aluno_cpf}}' => $alunoCPF,
     '{{responsavel_nome}}' => $data['guardianName'], '{{responsavel_cpf}}' => $data['guardianCPF'],
     '{{contratante_nome}}' => $c_nome, '{{contratante_cpf}}' => $c_cpf, '{{contratante_rg}}' => $c_rg,
     '{{contratante_endereco}}' => $alunoEnd,
-    '{{aluno_endereco}}' => $alunoEnd, // Alias para facilitar
     '{{curso_nome}}' => $data['courseName'], '{{curso_mensalidade}}' => 'R$ '.$valFmt,
     '{{vencimento_dia}}' => $diaVenc, '{{clausula_financeira}}' => $clausulaFinanceira,
     '{{escola_nome}}' => $school['name'], '{{escola_cnpj}}' => $school['cnpj'],
@@ -166,7 +162,7 @@ $finalText = strtr($finalText, $subs);
 $finalText = str_replace(['<br>', '<br/>'], "\n", $finalText);
 $finalText = strip_tags($finalText);
 
-// --- 6. TRATAMENTO DE IMAGEM ---
+// --- 4. TRATAMENTO DE IMAGEM ---
 function prepareImageForFPDF($dbData) {
     if (empty($dbData)) return false;
 
@@ -192,7 +188,7 @@ function prepareImageForFPDF($dbData) {
 $logoInfo = prepareImageForFPDF($school['profilePicture']);
 $sigInfo = prepareImageForFPDF($school['signatureImage']);
 
-// --- 7. CLASSE PDF ---
+// --- 5. CLASSE PDF ---
 class PDF extends FPDF {
     public $logoFile;
     function Header() {
@@ -257,7 +253,7 @@ $pdf->SetFont('Arial', '', 9);
 $pdf->Cell(0, $h, utf8_decode($school['name'] . ". CNPJ: " . $school['cnpj']), 0, 1);
 $pdf->Ln(2);
 
-// TEXTO (Corpo do Contrato)
+// TEXTO
 $pdf->SetFont('Arial', '', 9);
 $pdf->MultiCell(0, 4.5, utf8_decode($finalText), 0, 'J');
 
@@ -269,6 +265,8 @@ $cidade = !empty($school['schoolCity']) ? $school['schoolCity'] : 'Guarulhos';
 $dataImpressao = $acceptedAt ? dataExtenso($acceptedAt) : dataExtenso();
 $pdf->SetFont('Arial', '', 9);
 
+// Truque: Movemos o cursor para X=12 (início da coluna do contratante)
+// A coluna tem 85mm. Usamos Cell(85...) com 'C' para centralizar a data dentro desse espaço.
 $pdf->SetX(12);
 $pdf->Cell(85, 5, utf8_decode("$cidade, $dataImpressao"), 0, 1, 'C');
 $pdf->Ln(4);

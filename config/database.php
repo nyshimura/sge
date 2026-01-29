@@ -3,8 +3,8 @@
 
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'nomedobd');
-define('DB_USER', 'nomedabase');
-define('DB_PASS', 'suasenha');
+define('DB_USER', 'userdobd');
+define('DB_PASS', 'senhadobd');
 
 try {
     $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);

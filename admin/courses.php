@@ -11,34 +11,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $count = 0;
 
     try {
-        // 1. Busca alunos elegíveis (Status: Aprovada, Concluido, Ativo)
-        // Ignora 'Pendente' e 'Cancelado'
         $stmtEligible = $pdo->prepare("SELECT studentId FROM enrollments WHERE courseId = ? AND status IN ('Aprovada', 'Concluido', 'Ativo')");
         $stmtEligible->execute([$cId]);
         $students = $stmtEligible->fetchAll(PDO::FETCH_COLUMN);
 
         foreach ($students as $sid) {
-            // 2. Verifica se JÁ existe certificado para este aluno neste curso
             $check = $pdo->prepare("SELECT id FROM certificates WHERE student_id = ? AND course_id = ?");
             $check->execute([$sid, $cId]);
             
             if ($check->rowCount() == 0) {
-                // 3. Gera novo certificado se não existir
                 $hash = hash('sha256', uniqid($sid . $cId . microtime(), true));
-                
-                // Usa 'generated_at' conforme seu padrão
                 $ins = $pdo->prepare("INSERT INTO certificates (student_id, course_id, verification_hash, completion_date, generated_at) VALUES (?, ?, ?, NOW(), NOW())");
                 $ins->execute([$sid, $cId, $hash]);
                 $count++;
             }
         }
         
-        // Redireciona com feedback
         header("Location: courses.php?view=$cId&msg=cert_generated&count=$count");
         exit;
 
     } catch (Exception $e) {
-        $msgType = 'error'; // Tratado no bloco HTML abaixo
+        $msgType = 'error';
     }
 }
 
@@ -48,19 +41,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 $viewId = isset($_GET['view']) ? (int)$_GET['view'] : 0;
 
 if ($viewId > 0):
-    // Busca dados do curso
     $stmt = $pdo->prepare("SELECT * FROM courses WHERE id = ?");
     $stmt->execute([$viewId]);
     $course = $stmt->fetch();
 
     if (!$course) { echo "<script>window.location='courses.php';</script>"; exit; }
 
-    // Busca Professores
     $stmtT = $pdo->prepare("SELECT ct.*, u.firstName, u.lastName FROM course_teachers ct JOIN users u ON ct.teacherId = u.id WHERE ct.courseId = ?");
     $stmtT->execute([$viewId]);
     $teachers = $stmtT->fetchAll();
 
-    // Busca Alunos e verifica se já tem certificado
     $sqlS = "SELECT e.status as enrollStatus, u.id as studentId, u.firstName, u.lastName, u.cpf,
              (SELECT id FROM certificates WHERE student_id = u.id AND course_id = e.courseId LIMIT 1) as has_cert
              FROM enrollments e 
@@ -71,6 +61,118 @@ if ($viewId > 0):
     $stmtS->execute([$viewId]);
     $students = $stmtS->fetchAll();
 ?>
+
+<style>
+    /* ================= MOBILE (Padrão) ================= */
+    
+    /* Grid do Header:
+       Linha 1: Título (Esq) | Voltar (Dir)
+       Linha 2: Botões de Ação (Largura Total)
+    */
+    .course-header {
+        display: grid;
+        grid-template-areas: 
+            "title back"
+            "actions actions";
+        grid-template-columns: 1fr auto; /* Título fluido, Voltar fixo */
+        gap: 15px 10px; /* Gap Vertical 15px, Horizontal 10px */
+        margin-bottom: 20px;
+        align-items: center;
+    }
+
+    .course-title {
+        grid-area: title;
+        margin: 0;
+        font-size: 1.2rem;
+        line-height: 1.2;
+    }
+
+    /* Botão Voltar: Pequeno e no canto */
+    .btn-back-wrapper {
+        grid-area: back;
+    }
+    .btn-back {
+        padding: 5px 12px;
+        font-size: 0.85rem;
+        background: #95a5a6;
+        text-decoration: none;
+        color: white;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+    }
+
+    /* Botões de Ação (Gerar e Editar): Em baixo, lado a lado */
+    .primary-actions {
+        grid-area: actions;
+        display: flex;
+        gap: 10px;
+        width: 100%;
+    }
+    
+    .primary-actions .btn-save {
+        flex: 1; /* Ocupam 50% cada */
+        justify-content: center;
+        text-align: center;
+        padding: 12px;
+        font-size: 0.95rem;
+    }
+
+    /* Layout do Conteúdo */
+    .course-details-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .responsive-table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .custom-table { min-width: 600px; }
+
+
+    /* ================= DESKTOP (Telas Maiores) ================= */
+    @media (min-width: 768px) {
+        /* Volta a ser uma linha só: Título - Ações - Voltar */
+        .course-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Título ocupa espaço */
+        .course-title {
+            margin-right: auto;
+        }
+
+        /* Container de botões principais volta ao tamanho natural */
+        .primary-actions {
+            width: auto;
+            margin-right: 10px;
+        }
+        .primary-actions .btn-save {
+            flex: none; /* Tamanho natural do texto */
+            padding: 8px 15px;
+        }
+
+        /* Botão voltar fica por último visualmente */
+        .btn-back-wrapper {
+            order: 2; /* Garante que fique na direita */
+        }
+        .btn-back {
+            padding: 8px 15px; /* Tamanho normal desktop */
+            font-size: 0.9rem;
+        }
+
+        .course-details-grid {
+            grid-template-columns: 300px 1fr; 
+        }
+    }
+</style>
 
 <div class="content-wrapper">
     
@@ -84,19 +186,31 @@ if ($viewId > 0):
         </div>
     <?php endif; ?>
 
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h3 style="margin: 0;"><i class="fas fa-book-open"></i> Detalhes: <?php echo htmlspecialchars($course['name']); ?></h3>
-        <div style="display: flex; gap: 10px;">
+    <div class="course-header">
+        
+        <h3 class="course-title">
+            <i class="fas fa-book-open"></i> <?php echo htmlspecialchars($course['name']); ?>
+        </h3>
+        
+        <div class="btn-back-wrapper">
+            <a href="courses.php" class="btn-back">
+                <i class="fas fa-arrow-left"></i> Voltar
+            </a>
+        </div>
+
+        <div class="primary-actions">
             <button onclick="openBulkCertModal()" class="btn-save" style="background:#f39c12; color:white; border:none; cursor:pointer; display:flex; align-items:center; gap:8px;">
                 <i class="fas fa-certificate"></i> Gerar Certificados
             </button>
 
-            <a href="course_form.php?id=<?php echo $viewId; ?>" class="btn-save" style="background:#3498db; text-decoration:none;">Editar</a>
-            <a href="courses.php" class="btn-save" style="background:#95a5a6; text-decoration:none;">Voltar</a>
+            <a href="course_form.php?id=<?php echo $viewId; ?>" class="btn-save" style="background:#3498db; text-decoration:none; display:flex; align-items:center; gap:8px;">
+                <i class="fas fa-edit"></i> Editar
+            </a>
         </div>
+
     </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px;">
+    <div class="course-details-grid">
         <div class="card-box">
             <div style="height: 200px; overflow: hidden; border-radius: 8px; margin-bottom: 15px; background: #eee;">
                 <?php if($course['thumbnail']): ?>
@@ -105,64 +219,86 @@ if ($viewId > 0):
                     <div style="display:flex; align-items:center; justify-content:center; height:100%; color:#ccc;"><i class="fas fa-image fa-3x"></i></div>
                 <?php endif; ?>
             </div>
-            <p><strong>Status:</strong> <?php echo $course['status']; ?></p>
-            <p><strong>Mensalidade:</strong> R$ <?php echo number_format($course['monthlyFee'], 2, ',', '.'); ?></p>
-            <p><strong>Carga Horária:</strong> <?php echo $course['carga_horaria'] ?: '-'; ?></p>
+            
+            <div style="font-size: 0.95rem;">
+                <p style="margin-bottom: 8px;"><strong>Status:</strong> 
+                    <span style="padding: 2px 8px; border-radius: 4px; background: <?php echo ($course['status']=='Aberto'||$course['status']=='active')?'#d4edda':'#f8d7da'; ?>; color: <?php echo ($course['status']=='Aberto'||$course['status']=='active')?'#155724':'#721c24'; ?>;">
+                        <?php echo $course['status']; ?>
+                    </span>
+                </p>
+                <p style="margin-bottom: 8px;"><strong>Mensalidade:</strong> R$ <?php echo number_format($course['monthlyFee'], 2, ',', '.'); ?></p>
+                <p style="margin-bottom: 8px;"><strong>Carga Horária:</strong> <?php echo $course['carga_horaria'] ?: '-'; ?></p>
+            </div>
+
             <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
-            <h4>Professores</h4>
-            <?php foreach($teachers as $t): ?>
-                <div style="font-size:0.9rem; margin-bottom:5px;">• <?php echo $t['firstName'].' '.$t['lastName']; ?> (<?php echo $t['commissionRate']; ?>%)</div>
-            <?php endforeach; ?>
+            
+            <h4 style="margin-bottom: 10px; font-size: 1rem;">Professores</h4>
+            <?php if(empty($teachers)): ?>
+                <div style="color: #999; font-size: 0.9rem;">Nenhum atribuído.</div>
+            <?php else: ?>
+                <?php foreach($teachers as $t): ?>
+                    <div style="font-size:0.9rem; margin-bottom:5px; display:flex; align-items:center;">
+                        <i class="fas fa-user-tie" style="color: #3498db; margin-right: 8px;"></i>
+                        <?php echo $t['firstName'].' '.$t['lastName']; ?> 
+                        <span style="color: #777; font-size: 0.8rem; margin-left: 5px;">(<?php echo $t['commissionRate']; ?>%)</span>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </div>
 
         <div class="card-box" style="padding:0; overflow:hidden;">
-            <div style="padding:20px;">
-                <h4 style="margin:0;"><i class="fas fa-users"></i> Alunos Matriculados (<?php echo count($students); ?>)</h4>
+            <div style="padding:15px 20px; border-bottom: 1px solid #eee; background: #fcfcfc;">
+                <h4 style="margin:0; font-size: 1rem;"><i class="fas fa-users"></i> Alunos Matriculados (<?php echo count($students); ?>)</h4>
             </div>
-            <table class="custom-table" style="width:100%">
-                <thead>
-                    <tr>
-                        <th style="padding-left:20px;">Nome</th>
-                        <th>CPF</th>
-                        <th>Status</th>
-                        <th>Certificado</th>
-                        <th style="text-align:right; padding-right:20px;">Ação</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach($students as $s): ?>
-                    <tr>
-                        <td style="padding-left:20px;"><strong><?php echo $s['firstName'].' '.$s['lastName']; ?></strong></td>
-                        <td><?php echo $s['cpf']; ?></td>
-                        <td>
-                            <?php 
-                                $color = ($s['enrollStatus'] == 'Aprovada' || $s['enrollStatus'] == 'Concluido') ? '#27ae60' : '#f39c12';
-                                echo "<span style='color:$color; font-weight:bold;'>{$s['enrollStatus']}</span>";
-                            ?>
-                        </td>
-                        <td>
-                            <?php if($s['has_cert']): ?>
-                                <span style="color:#27ae60; font-size:0.9rem;"><i class="fas fa-check"></i> Emitido</span>
-                            <?php else: ?>
-                                <span style="color:#ccc;">-</span>
-                            <?php endif; ?>
-                        </td>
-                        <td style="text-align:right; padding-right:20px;">
-                            <a href="enrollment_form.php?sid=<?php echo $s['studentId']; ?>&cid=<?php echo $viewId; ?>" title="Ver Matrícula/Gerar"><i class="fas fa-external-link-alt"></i></a>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    <?php if(empty($students)): ?>
-                        <tr><td colspan="5" style="text-align:center; padding:20px; color:#999;">Nenhum aluno matriculado.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+            
+            <div class="responsive-table-wrapper">
+                <table class="custom-table" style="width:100%">
+                    <thead>
+                        <tr>
+                            <th style="padding-left:20px;">Nome</th>
+                            <th>CPF</th>
+                            <th>Status</th>
+                            <th>Certificado</th>
+                            <th style="text-align:right; padding-right:20px;">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach($students as $s): ?>
+                        <tr>
+                            <td style="padding-left:20px;"><strong><?php echo $s['firstName'].' '.$s['lastName']; ?></strong></td>
+                            <td><?php echo $s['cpf']; ?></td>
+                            <td>
+                                <?php 
+                                    $color = ($s['enrollStatus'] == 'Aprovada' || $s['enrollStatus'] == 'Concluido') ? '#27ae60' : '#f39c12';
+                                    echo "<span style='color:$color; font-weight:bold; font-size:0.85rem;'>{$s['enrollStatus']}</span>";
+                                ?>
+                            </td>
+                            <td>
+                                <?php if($s['has_cert']): ?>
+                                    <span style="color:#27ae60; font-size:0.85rem;"><i class="fas fa-check"></i> Emitido</span>
+                                <?php else: ?>
+                                    <span style="color:#ccc;">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td style="text-align:right; padding-right:20px;">
+                                <a href="enrollment_form.php?sid=<?php echo $s['studentId']; ?>&cid=<?php echo $viewId; ?>" class="btn-save" style="padding: 5px 10px; font-size: 0.8rem; background: #3498db; text-decoration: none;">
+                                    <i class="fas fa-cog"></i> Gerenciar
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php if(empty($students)): ?>
+                            <tr><td colspan="5" style="text-align:center; padding:30px; color:#999;">Nenhum aluno matriculado neste curso.</td></tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
 
 <div id="bulkCertModal" class="modal-overlay" style="display: none;">
-    <div class="modal-content" style="max-width: 450px; text-align: center;">
+    <div class="modal-content" style="max-width: 450px; text-align: center; width: 90%;">
         <div style="margin-bottom: 15px;">
             <i class="fas fa-award" style="font-size: 3rem; color: #f39c12;"></i>
         </div>
@@ -186,11 +322,11 @@ if ($viewId > 0):
                 </div>
             </div>
 
-            <div class="modal-actions" style="justify-content: center;">
-                <button type="button" class="btn-save" style="background: #95a5a6;" onclick="document.getElementById('bulkCertModal').style.display='none'">Cancelar</button>
+            <div class="modal-actions" style="justify-content: center; flex-wrap: wrap; gap: 10px;">
+                <button type="button" class="btn-save" style="background: #95a5a6; flex: 1;" onclick="document.getElementById('bulkCertModal').style.display='none'">Cancelar</button>
                 
-                <button type="submit" id="btnConfirmBulkCert" class="btn-save btn-disabled" style="background: #f39c12; opacity: 0.6; pointer-events: none; cursor: not-allowed;">
-                    Confirmar Geração
+                <button type="submit" id="btnConfirmBulkCert" class="btn-save btn-disabled" style="background: #f39c12; opacity: 0.6; pointer-events: none; cursor: not-allowed; flex: 1;">
+                    Confirmar
                 </button>
             </div>
         </form>
@@ -200,7 +336,6 @@ if ($viewId > 0):
 <script>
     function openBulkCertModal() {
         document.getElementById('bulkCertModal').style.display = 'flex';
-        // Reset do estado
         document.getElementById('checkBulkCert').checked = false;
         const btn = document.getElementById('btnConfirmBulkCert');
         btn.style.opacity = '0.6';
@@ -212,13 +347,11 @@ if ($viewId > 0):
     document.getElementById('checkBulkCert').addEventListener('change', function() {
         const btn = document.getElementById('btnConfirmBulkCert');
         if(this.checked) {
-            // Ativa
             btn.style.opacity = '1';
             btn.style.pointerEvents = 'auto';
             btn.style.cursor = 'pointer';
             btn.classList.remove('btn-disabled');
         } else {
-            // Desativa
             btn.style.opacity = '0.6';
             btn.style.pointerEvents = 'none';
             btn.style.cursor = 'not-allowed';
@@ -269,25 +402,25 @@ try {
 
 <div class="content-wrapper">
     <?php echo $msg; ?>
-    <div class="filters-bar">
-        <div class="filter-group" style="flex-grow: 1;">
+    <div class="filters-bar" style="flex-wrap: wrap; gap: 15px;">
+        <div class="filter-group" style="flex-grow: 1; min-width: 200px;">
             <h3 style="margin: 0; margin-right: 15px;">Cursos (<?php echo count($courses); ?>)</h3>
             <a href="course_form.php" class="btn-save" style="padding: 8px 15px; font-size: 0.9rem;">+ Novo</a>
         </div>
-        <form method="GET" action="" style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <select name="teacher" class="form-control" style="width: auto; padding: 8px;" onchange="this.form.submit()">
+        <form method="GET" action="" style="display: flex; gap: 10px; flex-wrap: wrap; flex-grow: 1; justify-content: flex-end;">
+            <select name="teacher" class="form-control" style="width: auto; padding: 8px; min-width: 150px;" onchange="this.form.submit()">
                 <option value="0">Todos os Professores</option>
                 <?php foreach ($allTeachers as $t): ?>
                     <option value="<?php echo $t['id']; ?>" <?php echo $filterTeacher == $t['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($t['firstName'] . ' ' . $t['lastName']); ?></option>
                 <?php endforeach; ?>
             </select>
-            <div style="position: relative;">
-                <input type="text" name="search" class="form-control" placeholder="Buscar curso..." value="<?php echo htmlspecialchars($search); ?>" style="padding: 8px 30px 8px 10px; width: 200px;">
+            <div style="position: relative; flex-grow: 1; max-width: 300px;">
+                <input type="text" name="search" class="form-control" placeholder="Buscar curso..." value="<?php echo htmlspecialchars($search); ?>" style="padding: 8px 30px 8px 10px; width: 100%;">
                 <button type="submit" style="position: absolute; right: 8px; top: 8px; background: none; border: none; cursor: pointer; color: #7f8c8d;"><i class="fas fa-search"></i></button>
             </div>
-            <?php if ($search || $filterTeacher): ?><a href="courses.php" style="padding: 8px; color: #e74c3c; text-decoration: none;" title="Limpar Filtros"><i class="fas fa-times"></i></a><?php endif; ?>
+            <?php if ($search || $filterTeacher): ?><a href="courses.php" style="padding: 8px; color: #e74c3c; text-decoration: none; align-self: center;" title="Limpar Filtros"><i class="fas fa-times"></i></a><?php endif; ?>
         </form>
-        <div class="view-toggles">
+        <div class="view-toggles" style="margin-left: auto;">
             <button class="view-btn active" id="btnGrid" onclick="switchView('grid')" title="Cards"><i class="fas fa-th-large"></i></button>
             <button class="view-btn" id="btnList" onclick="switchView('list')" title="Lista"><i class="fas fa-list"></i></button>
         </div>
@@ -296,7 +429,7 @@ try {
     <?php if (count($courses) == 0): ?>
         <div class="card-box" style="text-align: center; padding: 40px;"><p style="color: #999;">Nenhum curso encontrado.</p></div>
     <?php else: ?>
-        <div id="viewGrid" class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));">
+        <div id="viewGrid" class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
             <?php foreach ($courses as $c): 
                 $profName = '<span style="color:orange">Sem professor</span>';
                 if (!empty($c['teachers_list'])) {
@@ -305,27 +438,27 @@ try {
                     $profName = implode(', ', $safeProfs);
                 }
             ?>
-                <div class="card-box" style="padding: 0; overflow: hidden; display: flex; flex-direction: column; cursor:pointer;" onclick="window.location='?view=<?php echo $c['id']; ?>'">
+                <div class="card-box" style="padding: 0; overflow: hidden; display: flex; flex-direction: column; cursor:pointer; transition: transform 0.2s;" onclick="window.location='?view=<?php echo $c['id']; ?>'">
                     <div style="height: 150px; overflow: hidden; background: #eee; position: relative;">
                         <?php if (!empty($c['thumbnail'])): ?><img src="<?php echo $c['thumbnail']; ?>" style="width: 100%; height: 100%; object-fit: cover;"><?php else: ?><div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #aaa;"><i class="fas fa-image fa-3x"></i></div><?php endif; ?>
                         <span style="position: absolute; top: 10px; right: 10px; padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; color: white; background: <?php echo ($c['status'] == 'Aberto' || $c['status'] == 'active') ? '#27ae60' : '#e74c3c'; ?>;"><?php echo ucfirst($c['status']); ?></span>
                     </div>
                     <div style="padding: 20px; flex-grow: 1; display: flex; flex-direction: column;">
-                        <h4 style="margin: 0 0 10px 0; color: #2c3e50;"><?php echo htmlspecialchars($c['name']); ?></h4>
+                        <h4 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 1.1rem;"><?php echo htmlspecialchars($c['name']); ?></h4>
                         <div style="font-size: 0.85rem; color: #555; margin-bottom: 15px;">
-                            <div style="margin-bottom: 5px; line-height: 1.4;"><i class="fas fa-chalkboard-teacher"></i> <strong>Prof(s):</strong> <?php echo $profName; ?></div>
-                            <div style="margin-top: 5px;"><i class="fas fa-tag"></i> <strong>Valor:</strong> R$ <?php echo number_format($c['monthlyFee'], 2, ',', '.'); ?></div>
+                            <div style="margin-bottom: 5px; line-height: 1.4;"><i class="fas fa-chalkboard-teacher"></i> <strong>Prof:</strong> <?php echo $profName; ?></div>
+                            <div style="margin-top: 5px;"><i class="fas fa-tag"></i> <strong>R$</strong> <?php echo number_format($c['monthlyFee'], 2, ',', '.'); ?></div>
                         </div>
-                        <div style="display: flex; gap: 10px; border-top: 1px solid #eee; padding-top: 15px;">
-                            <a href="course_form.php?id=<?php echo $c['id']; ?>" onclick="event.stopPropagation();" style="flex: 1; text-align: center; color: #3498db; text-decoration: none; font-weight: bold; padding: 5px; border: 1px solid #3498db; border-radius: 4px; transition: 0.3s;">Editar</a>
-                            <button type="button" style="flex: 1; text-align: center; color: #e74c3c; background:white; cursor:pointer; font-weight: bold; padding: 5px; border: 1px solid #e74c3c; border-radius: 4px; transition: 0.3s;" onclick="event.stopPropagation(); openDeleteModal(<?php echo $c['id']; ?>, '<?php echo htmlspecialchars(addslashes($c['name'])); ?>')">Excluir</button>
+                        <div style="display: flex; gap: 10px; border-top: 1px solid #eee; padding-top: 15px; margin-top: auto;">
+                            <a href="course_form.php?id=<?php echo $c['id']; ?>" onclick="event.stopPropagation();" style="flex: 1; text-align: center; color: #3498db; text-decoration: none; font-weight: bold; padding: 8px; border: 1px solid #3498db; border-radius: 4px; transition: 0.3s; font-size: 0.9rem;">Editar</a>
+                            <button type="button" style="flex: 1; text-align: center; color: #e74c3c; background:white; cursor:pointer; font-weight: bold; padding: 8px; border: 1px solid #e74c3c; border-radius: 4px; transition: 0.3s; font-size: 0.9rem;" onclick="event.stopPropagation(); openDeleteModal(<?php echo $c['id']; ?>, '<?php echo htmlspecialchars(addslashes($c['name'])); ?>')">Excluir</button>
                         </div>
                     </div>
                 </div>
             <?php endforeach; ?>
         </div>
-        <div id="viewList" class="courses-list-view" style="display:none;">
-            <table class="custom-table">
+        <div id="viewList" class="courses-list-view" style="display:none; width: 100%; overflow-x: auto;">
+            <table class="custom-table" style="min-width: 800px;">
                 <thead><tr><th width="60">Img</th><th>Curso</th><th>Professores</th><th>Carga</th><th>Valor</th><th>Vagas</th><th>Status</th><th style="text-align: right;">Ações</th></tr></thead>
                 <tbody>
                     <?php foreach ($courses as $c): 
@@ -335,7 +468,7 @@ try {
                     <tr>
                         <td><?php if (!empty($c['thumbnail'])): ?><img src="<?php echo $c['thumbnail']; ?>" class="table-thumb"><?php else: ?><div class="table-thumb" style="display: flex; align-items: center; justify-content: center; color: #ccc;"><i class="fas fa-image"></i></div><?php endif; ?></td>
                         <td><a href="?view=<?php echo $c['id']; ?>" style="color:inherit; text-decoration:none;"><strong><?php echo htmlspecialchars($c['name']); ?></strong></a></td>
-                        <td style="max-width: 250px; font-size: 0.9rem;"><?php echo $profName; ?></td>
+                        <td style="max-width: 200px; font-size: 0.9rem;"><?php echo $profName; ?></td>
                         <td><?php echo htmlspecialchars($c['carga_horaria'] ?? '-'); ?></td>
                         <td style="color: #27ae60; font-weight: bold;">R$ <?php echo number_format($c['monthlyFee'], 2, ',', '.'); ?></td>
                         <td><?php echo $c['totalSlots'] ? $c['totalSlots'] : '∞'; ?></td>
@@ -355,10 +488,10 @@ try {
 <?php endif; ?>
 
 <div id="deleteModal" class="modal-overlay" style="display: none;">
-    <div class="modal-content">
+    <div class="modal-content" style="width: 90%; max-width: 400px;">
         <div class="modal-title"><i class="fas fa-exclamation-triangle"></i> Atenção</div>
         <p>Você está prestes a excluir o curso:</p>
-        <h4 id="deleteCourseName" style="color: #333;"></h4>
+        <h4 id="deleteCourseName" style="color: #333; margin: 10px 0;"></h4>
         <p style="font-size: 0.9rem; color: #666; margin-top: 10px;">Isso apagará permanentemente o curso, matrículas e histórico financeiro associado. Essa ação é irreversível.</p>
         <div style="margin-top: 15px; text-align: left; background: #f9f9f9; padding: 10px; border-radius: 4px;">
             <label style="display: flex; align-items: center; cursor: pointer;">
@@ -366,9 +499,9 @@ try {
                 <span style="font-size: 0.9rem;">Estou ciente e quero excluir.</span>
             </label>
         </div>
-        <div class="modal-actions">
-            <button class="btn-save" style="background: #95a5a6;" onclick="closeDeleteModal()">Cancelar</button>
-            <a href="#" id="deleteLink" class="btn-save btn-disabled" style="background: #e74c3c;">Confirmar Exclusão</a>
+        <div class="modal-actions" style="margin-top: 20px;">
+            <button class="btn-save" style="background: #95a5a6; flex: 1;" onclick="closeDeleteModal()">Cancelar</button>
+            <a href="#" id="deleteLink" class="btn-save btn-disabled" style="background: #e74c3c; flex: 1; text-align: center;">Excluir</a>
         </div>
     </div>
 </div>

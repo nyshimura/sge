@@ -50,7 +50,7 @@ if (strpos($userPic, 'data:image') === false && !file_exists($userPic)) {
             </h2>
             
             <div class="user-info" style="display:flex; align-items:center;">
-                <a href="../profile/index.php" class="user-profile-link" title="Meu Perfil">
+                <a href="../admin/profile.php" class="user-profile-link" title="Meu Perfil">
                     <span class="header-user-name">
                         Olá, <strong><?php echo htmlspecialchars(explode(' ', $_SESSION['user_name'])[0]); // Mostra só o primeiro nome ?></strong>
                     </span>
