@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $params[':inter_key'] = $fName;
                 }
             }
-            // Arquivo ca.crt (Webhook) - NOVO!
+            // Arquivo ca.crt (Webhook)
             if (isset($_FILES['inter_webhook_crt']) && $_FILES['inter_webhook_crt']['error'] == 0) {
                 $fName = 'Inter_Webhook_CA_' . time() . '.crt';
                 if (move_uploaded_file($_FILES['inter_webhook_crt']['tmp_name'], $certDir . $fName)) {
@@ -198,7 +198,6 @@ function renderToolbar($targetId) {
         <button class="settings-tab-link" onclick="openTab(event, 'tab-docs')"><i class="fas fa-file-contract"></i> Docs</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-fin')"><i class="fas fa-wallet"></i> Financeiro</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-pagamentos')"><i class="fas fa-hand-holding-usd"></i> Pagamentos</button>
-        <button class="settings-tab-link" onclick="openTab(event, 'tab-api')"><i class="fas fa-plug"></i> Integrações</button>
         <button class="settings-tab-link" onclick="openTab(event, 'tab-system')"><i class="fas fa-sync"></i> Sistema</button>
     </div>
 
@@ -492,23 +491,7 @@ function renderToolbar($targetId) {
             </div>
         </div>
 
-        <div id="tab-api" class="tab-content">
-            <div class="section-block">
-                <h4 class="section-title"><i class="fas fa-brain"></i> IA e Banco de Dados</h4>
-                <div class="settings-grid">
-                    <div class="form-group"><label>API Key</label><input type="password" name="geminiApiKey" class="form-control" value="<?php echo htmlspecialchars($settings['geminiApiKey']); ?>"></div>
-                    <div class="form-group"><label>Endpoint</label><input type="text" name="geminiApiEndpoint" class="form-control" value="<?php echo htmlspecialchars($settings['geminiApiEndpoint']); ?>"></div>
-                    <div class="form-group span-2"><label>Host</label><input type="text" name="dbHost" class="form-control" value="<?php echo htmlspecialchars($settings['dbHost']); ?>"></div>
-                    <div class="form-group"><label>Nome do Banco</label><input type="text" name="dbName" class="form-control" value="<?php echo htmlspecialchars($settings['dbName']); ?>"></div>
-                    <div class="form-group"><label>Usuário</label><input type="text" name="dbUser" class="form-control" value="<?php echo htmlspecialchars($settings['dbUser']); ?>"></div>
-                    <div class="form-group"><label>Senha</label><input type="password" name="dbPass" class="form-control" value="<?php echo htmlspecialchars($settings['dbPass']); ?>"></div>
-                    <div class="form-group"><label>Porta</label><input type="text" name="dbPort" class="form-control" value="<?php echo htmlspecialchars($settings['dbPort']); ?>"></div>
-                </div>
-                <div style="text-align: right; margin-top: 15px;">
-                    <button type="submit" class="btn-save btn-primary">Salvar Integrações</button>
-                </div>
-            </div>
-        </div>
+
 
         <div id="tab-system" class="tab-content">
             <div class="section-block" style="border-left: 4px solid #6f42c1; background-color: #f9f2ff;">
@@ -521,11 +504,11 @@ function renderToolbar($targetId) {
                 </p>
 
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <button type="button" onclick="openMigrationModal('check_db')" class="btn-secondary" style="border:1px solid #ccc; background:#fff; color:#333; padding: 10px 15px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-                        <i class="fas fa-database"></i> <span>Verificar Banco de Dados</span>
-                    </button>
-                    <button type="button" onclick="openMigrationModal('update_system')" class="btn-primary" style="background-color: #6f42c1; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px;">
-                        <i class="fab fa-github"></i> <span>Buscar Atualizações (GitHub)</span>
+                    <button type="button" 
+                        onclick="openMigrationModal('check_db')" 
+                        class="btn-primary" 
+                        style="background-color: #6f42c1; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 5px;">
+                        <i class="fas fa-cloud-download-alt"></i> <span>Buscar Atualizações</span>
                     </button>
                 </div>
             </div>
@@ -591,16 +574,43 @@ function renderToolbar($targetId) {
 
 <div id="migrationModal" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 10000;">
     <div class="modal-card" style="width: 600px; max-width: 90%; background: #2d3436; color: #dfe6e9; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        
         <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #636e72;">
-            <h3 style="margin: 0; color: #00cec9; font-family: monospace;"><i class="fas fa-terminal"></i> System Updater</h3>
-            <button type="button" onclick="closeMigrationModal()" style="background: none; border: none; color: #ff7675; font-size: 1.2rem; cursor: pointer;"><i class="fas fa-times"></i></button>
+            <h3 style="margin: 0; color: #00cec9; font-family: monospace;">
+                <i class="fas fa-terminal"></i> System Updater
+            </h3>
+            <button type="button" onclick="closeMigrationModal()" style="background: none; border: none; color: #ff7675; font-size: 1.2rem; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
-        <div id="migrationContent" style="height: 300px; overflow-y: auto; padding: 15px; font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.5;">
-            <div style="text-align: center; margin-top: 100px;"><i class="fas fa-circle-notch fa-spin fa-2x"></i><br>Inicializando...</div>
+
+        <div id="migrationContent" style="height: 250px; overflow-y: auto; padding: 15px; font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.5; background: #1e272e;">
+            <div style="text-align: center; margin-top: 80px; color: #b2bec3;">
+                Clique em "Verificar Agora" para iniciar.
+            </div>
         </div>
-        <div class="modal-footer" style="padding-top: 15px; border-top: 1px solid #636e72; text-align: right;">
-            <button type="button" id="btnForceUpdate" onclick="runMigration('update_system', true)" style="display: none; background: #e67e22; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; margin-right: 10px;"><i class="fas fa-sync"></i> Forçar Reinstalação</button>
-            <button type="button" onclick="closeMigrationModal()" class="btn-primary" style="background: #00cec9; border: none; color: #2d3436; font-weight: bold;">Fechar</button>
+
+        <div id="securityCheckArea" style="display: none; background: #2d3436; border-top: 1px solid #636e72; padding: 15px;">
+            <div style="background: #d63031; color: white; padding: 10px; border-radius: 4px; font-size: 0.85rem; margin-bottom: 10px; border-left: 5px solid #ff7675;">
+                <i class="fas fa-exclamation-triangle"></i> <strong>RECOMENDAÇÃO CRÍTICA:</strong><br>
+                Antes de continuar, faça um <strong>BACKUP COMPLETO</strong> (Arquivos + Banco de Dados).<br>
+                O processo é irreversível.
+            </div>
+            
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: #dfe6e9; font-weight: bold; font-size: 0.9rem; user-select: none;">
+                <input type="checkbox" id="chkConfirmUpdate" onchange="toggleInstallButton()" style="width: 18px; height: 18px;">
+                <span>Li o aviso e desejo atualizar o sistema.</span>
+            </label>
+        </div>
+
+        <div class="modal-footer" style="padding: 15px; border-top: 1px solid #636e72; display: flex; justify-content: flex-end; gap: 10px; background: #2d3436; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+            <button type="button" onclick="closeMigrationModal()" class="btn-secondary" style="background: #636e72; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">
+                Fechar
+            </button>
+
+            <button type="button" id="btnAction" onclick="checkUpdate()" style="background: #0984e3; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                <i class="fas fa-search"></i> Verificar Agora
+            </button>
         </div>
     </div>
 </div>
@@ -677,7 +687,7 @@ function wrapText(elementId, tagStart, tagEnd) {
     }
 }
 
-// Funções de Modal e Migração (Mantidas)
+// Funções de Modal e Migração
 function openRenewModal() { document.getElementById('renewConfirmModal').style.display = 'flex'; }
 function closeRenewModal() { document.getElementById('renewConfirmModal').style.display = 'none'; }
 function confirmRenewSubmission() {
@@ -701,63 +711,156 @@ function confirmRenewSubmission() {
     form.submit();
 }
 
+// --- JS DE ATUALIZAÇÃO (COM TRAVA DE SEGURANÇA) ---
+let updateState = 'check'; // 'check' ou 'install'
+
 function openMigrationModal(action) {
     const modal = document.getElementById('migrationModal');
     const content = document.getElementById('migrationContent');
-    const btnForce = document.getElementById('btnForceUpdate');
+    const btnAction = document.getElementById('btnAction');
+    const secArea = document.getElementById('securityCheckArea');
+    const chk = document.getElementById('chkConfirmUpdate');
+    
     modal.style.display = 'flex';
-    btnForce.style.display = 'none'; 
-    content.innerHTML = '<div style="text-align: center; margin-top: 100px; color: #00cec9;"><i class="fas fa-circle-notch fa-spin fa-3x"></i><br><br>Processando... Por favor, aguarde.</div>';
-    runMigration(action, false);
+    
+    // Reseta estado visual
+    updateState = 'check';
+    secArea.style.display = 'none'; // Esconde alerta
+    chk.checked = false; // Desmarca checkbox
+    
+    btnAction.style.display = 'inline-block';
+    btnAction.disabled = false;
+    btnAction.innerHTML = '<i class="fas fa-search"></i> Verificar Agora';
+    btnAction.style.backgroundColor = '#0984e3'; // Azul
+    btnAction.style.cursor = 'pointer';
+    btnAction.onclick = checkUpdate; 
+
+    if (action === 'check_db') {
+        checkUpdate();
+    } else {
+        content.innerHTML = '<div style="text-align: center; margin-top: 80px; color: #b2bec3;">Clique no botão abaixo para buscar atualizações.</div>';
+    }
+}
+
+function toggleInstallButton() {
+    const chk = document.getElementById('chkConfirmUpdate');
+    const btnAction = document.getElementById('btnAction');
+    
+    // Só libera se estiver no modo de instalação E o checkbox estiver marcado
+    if (updateState === 'install') {
+        if (chk.checked) {
+            btnAction.disabled = false;
+            btnAction.style.backgroundColor = '#00b894'; // Verde
+            btnAction.style.cursor = 'pointer';
+            btnAction.innerHTML = '<i class="fas fa-download"></i> Instalar Atualização';
+        } else {
+            btnAction.disabled = true;
+            btnAction.style.backgroundColor = '#b2bec3'; // Cinza apagado
+            btnAction.style.cursor = 'not-allowed';
+            btnAction.innerHTML = '<i class="fas fa-lock"></i> Confirme o Backup';
+        }
+    }
+}
+
+function checkUpdate() {
+    const content = document.getElementById('migrationContent');
+    const btnAction = document.getElementById('btnAction');
+    const secArea = document.getElementById('securityCheckArea');
+    
+    btnAction.disabled = true;
+    btnAction.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+    content.innerHTML = '<div style="text-align: center; margin-top: 80px; color: #00cec9;"><i class="fas fa-circle-notch fa-spin fa-3x"></i><br><br>Consultando GitHub...</div>';
+
+    fetch('../libs/auto_migrate.php?action=check')
+    .then(response => response.json())
+    .then(data => {
+        renderLogs(data, content);
+        
+        if (data.update_available === true) {
+            // MODO INSTALAÇÃO
+            updateState = 'install';
+            secArea.style.display = 'block'; // Mostra o alerta e checkbox
+            
+            // Trava o botão imediatamente
+            btnAction.onclick = runRealUpdate;
+            toggleInstallButton(); // Chama a função para aplicar o estilo bloqueado
+            
+        } else {
+            // TUDO EM DIA
+            btnAction.disabled = false;
+            btnAction.innerHTML = '<i class="fas fa-check"></i> Tudo em dia';
+            btnAction.style.backgroundColor = '#636e72'; 
+        }
+    })
+    .catch(error => {
+        content.innerHTML = `<div style="color: #ff7675;">Erro: ${error}</div>`;
+        btnAction.disabled = false;
+        btnAction.innerHTML = 'Tentar Novamente';
+    });
+}
+
+function runRealUpdate() {
+    const content = document.getElementById('migrationContent');
+    const btnAction = document.getElementById('btnAction');
+    const secArea = document.getElementById('securityCheckArea');
+    
+    // Segurança extra (embora o botão já devesse estar bloqueado)
+    const chk = document.getElementById('chkConfirmUpdate');
+    if (!chk.checked) return;
+
+    btnAction.disabled = true;
+    btnAction.innerHTML = '<i class="fas fa-cog fa-spin"></i> Instalando...';
+    
+    // Esconde a área de segurança para limpar a tela
+    secArea.style.display = 'none';
+    
+    content.innerHTML += '<div style="color: #ffeaa7; margin-top: 10px; border-top: 1px dashed #555; padding-top: 10px;">--- Iniciando Instalação ---</div>';
+    content.scrollTop = content.scrollHeight;
+
+    fetch('../libs/auto_migrate.php?action=perform_update')
+    .then(response => response.json())
+    .then(data => {
+        renderLogs(data, content);
+        
+        btnAction.innerHTML = '<i class="fas fa-check-double"></i> Concluído';
+        btnAction.style.backgroundColor = '#636e72';
+    })
+    .catch(error => {
+        content.innerHTML += `<div style="color: #ff7675;">Erro fatal: ${error}</div>`;
+        btnAction.disabled = false;
+        btnAction.innerHTML = 'Erro. Tentar de novo?';
+    });
+}
+
+function renderLogs(data, content) {
+    // Se for a primeira renderização (check), limpa a tela. Se for update, adiciona.
+    if (updateState === 'check') content.innerHTML = ''; 
+    
+    // Cabeçalho de Versão (Só mostra no check)
+    if (updateState === 'check') {
+        content.innerHTML += `<div style="margin-bottom: 10px; border-bottom: 1px dashed #555; padding-bottom: 5px; font-weight: bold;">
+            Versão Local: <span style="color: #fab1a0">${data.version_local}</span> <br>
+            Versão GitHub: <span style="color: #55efc4">${data.version_remote}</span>
+        </div>`;
+    }
+
+    if (data.logs && data.logs.length > 0) {
+        data.logs.forEach(log => {
+            let color = '#dfe6e9';
+            let icon = '•';
+            if (log.type === 'success') { color = '#55efc4'; icon = '✓'; }
+            if (log.type === 'error')   { color = '#ff7675'; icon = '✗'; }
+            if (log.type === 'warning') { color = '#ffeaa7'; icon = '!'; }
+            
+            content.innerHTML += `<div style="color: ${color}; margin-bottom: 3px; font-family: monospace;">
+                <span style="opacity:0.7; margin-right:5px;">${icon}</span> ${log.msg}
+            </div>`;
+        });
+    }
+    content.scrollTop = content.scrollHeight;
 }
 
 function closeMigrationModal() { document.getElementById('migrationModal').style.display = 'none'; }
-
-function runMigration(action, force) {
-    let url = '../libs/auto_migrate.php?json=1';
-    if (action === 'update_system') url += '&action=update_system';
-    if (force) url += '&force=1';
-
-    const content = document.getElementById('migrationContent');
-
-    fetch(url)
-    .then(response => response.json())
-    .then(data => {
-        content.innerHTML = ''; 
-        if (data.version_local) {
-            content.innerHTML += `<div style="margin-bottom: 10px; border-bottom: 1px dashed #555; padding-bottom: 5px;">
-                Local: <span style="color: #fab1a0">${data.version_local}</span> | 
-                GitHub: <span style="color: #55efc4">${data.version_remote}</span>
-            </div>`;
-        }
-        if (data.logs && data.logs.length > 0) {
-            data.logs.forEach(log => {
-                let color = '#dfe6e9';
-                let icon = '•';
-                if (log.type === 'success') { color = '#55efc4'; icon = '✓'; }
-                if (log.type === 'error')   { color = '#ff7675'; icon = '✗'; }
-                if (log.type === 'warning') { color = '#ffeaa7'; icon = '!'; }
-                if (log.type === 'info')    { color = '#74b9ff'; icon = 'ℹ'; }
-                content.innerHTML += `<div style="color: ${color}; margin-bottom: 3px;">
-                    <span style="opacity:0.7; margin-right:5px;">${icon}</span> ${log.msg}
-                </div>`;
-            });
-        } else {
-            content.innerHTML += '<div style="color: #fab1a0">Nenhum log retornado.</div>';
-        }
-        if (action === 'update_system' && !force) {
-            const isUpdated = data.logs.some(l => l.msg.includes('já está atualizado'));
-            if (isUpdated) document.getElementById('btnForceUpdate').style.display = 'inline-block';
-        }
-        content.scrollTop = content.scrollHeight;
-    })
-    .catch(error => {
-        content.innerHTML = `<div style="color: #ff7675; text-align: center; margin-top: 50px;">
-            <i class="fas fa-exclamation-triangle fa-2x"></i><br><br>
-            Erro na comunicação com o servidor:<br>${error}
-        </div>`;
-    });
-}
 </script>
 
 <style>
