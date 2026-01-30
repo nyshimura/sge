@@ -47,7 +47,7 @@ if (strpos($userPic, 'data:image') === false && !file_exists($userPic)) {
             
             <div class="user-info">
                 
-                <a href="../profile/index.php" class="user-profile-link" title="Meu Perfil">
+                <a href="../teacher/profile.php" class="user-profile-link" title="Meu Perfil">
                     <span class="header-user-name">
                         Olá, <strong><?php echo htmlspecialchars(explode(' ', $_SESSION['user_name'])[0]); ?></strong>
                     </span>
@@ -61,4 +61,5 @@ if (strpos($userPic, 'data:image') === false && !file_exists($userPic)) {
         </div>
         
         <div class="content-wrapper">
+
             <div class="page-container">
