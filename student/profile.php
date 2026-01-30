@@ -107,7 +107,7 @@ if ($role == 'admin' || $role == 'superadmin') {
 }
 ?>
 
-<div class="content-wrapper">
+<div class="page-container">
     
     <style>
         /* Estilo do Card Principal */
