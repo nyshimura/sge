@@ -211,10 +211,12 @@ checkRole(['admin', 'superadmin']);
 <div id="toast" class="toast">Salvo com sucesso!</div>
 
 <div class="content-wrapper">
+    
     <div class="card-box" style="max-width: 800px; margin: 0 auto 30px auto;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            
             <h2><?php echo $isEdit ? 'Editar Matrícula' : 'Nova Matrícula'; ?></h2>
-            <a href="enrollments.php" class="btn-secondary">Voltar</a>
+            <a href="enrollments.php" class="btn-back" ><i class="fas fa-arrow-left"></i> Voltar</a>
         </div>
 
         <?php if (isset($error)): ?><div class="alert alert-danger"><?php echo $error; ?></div><?php endif; ?>
