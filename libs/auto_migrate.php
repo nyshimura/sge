@@ -1,7 +1,7 @@
 <?php
 /**
  * libs/auto_migrate.php
- * Sistema de Atualização (Force Overwrite + Logs Detalhados)
+ * Sistema de Atualização (Force Overwrite + Logs Detalhados + Novas Tabelas de Eventos)
  */
 
 if (ob_get_length()) ob_clean();
@@ -192,8 +192,42 @@ function getMigrations() {
         ['type'=>'col', 't'=>'payments', 'c'=>'mp_payment_id', 'sql'=>"ALTER TABLE `payments` ADD COLUMN `mp_payment_id` VARCHAR(50) NULL DEFAULT NULL AFTER `paymentDate`"],
         ['type'=>'col', 't'=>'courses', 'c'=>'thumbnail', 'sql'=>"ALTER TABLE courses ADD COLUMN thumbnail LONGTEXT DEFAULT NULL"],
         ['type'=>'col', 't'=>'certificates', 'c'=>'custom_workload', 'sql'=>"ALTER TABLE certificates ADD COLUMN custom_workload VARCHAR(50) DEFAULT NULL AFTER completion_date"],
+        
+        // Tabelas Antigas (Recesso e Professores)
         ['type'=>'tbl', 't'=>'school_recess', 'sql'=>"CREATE TABLE IF NOT EXISTS school_recess (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL, start_date DATE NOT NULL, end_date DATE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"],
-        ['type'=>'tbl', 't'=>'course_teachers', 'sql'=>"CREATE TABLE IF NOT EXISTS `course_teachers` (`id` int(11) NOT NULL AUTO_INCREMENT, `courseId` int(11) NOT NULL, `teacherId` int(11) NOT NULL, `commissionRate` decimal(5,2) DEFAULT 0.00, `createdAt` timestamp NULL DEFAULT current_timestamp(), PRIMARY KEY (`id`), KEY `courseId` (`courseId`), KEY `teacherId` (`teacherId`), CONSTRAINT `course_teachers_ibfk_1` FOREIGN KEY (`courseId`) REFERENCES `courses` (`id`) ON DELETE CASCADE, CONSTRAINT `course_teachers_ibfk_2` FOREIGN KEY (`teacherId`) REFERENCES `users` (`id`) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"]
+        ['type'=>'tbl', 't'=>'course_teachers', 'sql'=>"CREATE TABLE IF NOT EXISTS `course_teachers` (`id` int(11) NOT NULL AUTO_INCREMENT, `courseId` int(11) NOT NULL, `teacherId` int(11) NOT NULL, `commissionRate` decimal(5,2) DEFAULT 0.00, `createdAt` timestamp NULL DEFAULT current_timestamp(), PRIMARY KEY (`id`), KEY `courseId` (`courseId`), KEY `teacherId` (`teacherId`), CONSTRAINT `course_teachers_ibfk_1` FOREIGN KEY (`courseId`) REFERENCES `courses` (`id`) ON DELETE CASCADE, CONSTRAINT `course_teachers_ibfk_2` FOREIGN KEY (`teacherId`) REFERENCES `users` (`id`) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"],
+
+        // --- NOVAS TABELAS DE TERMOS DE COMPROMISSO ---
+        [
+            'type' => 'tbl', 
+            't' => 'event_terms', 
+            'sql' => "CREATE TABLE IF NOT EXISTS `event_terms` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `courseId` int(11) NOT NULL,
+                `title` varchar(255) NOT NULL,
+                `content` longtext NOT NULL,
+                `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (`id`),
+                KEY `courseId` (`courseId`),
+                CONSTRAINT `event_terms_ibfk_1` FOREIGN KEY (`courseId`) REFERENCES `courses` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+        ],
+        [
+            'type' => 'tbl', 
+            't' => 'event_term_responses', 
+            'sql' => "CREATE TABLE IF NOT EXISTS `event_term_responses` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `term_id` int(11) NOT NULL,
+                `studentId` int(11) NOT NULL,
+                `status` enum('pending','accepted','declined') NOT NULL DEFAULT 'pending',
+                `responded_at` datetime DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                KEY `term_id` (`term_id`),
+                KEY `studentId` (`studentId`),
+                CONSTRAINT `event_resp_ibfk_1` FOREIGN KEY (`term_id`) REFERENCES `event_terms` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `event_resp_ibfk_2` FOREIGN KEY (`studentId`) REFERENCES `users` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+        ]
     ];
 }
 
