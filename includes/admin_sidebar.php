@@ -56,6 +56,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-graduation-cap"></i> <span>Cursos</span>
             </a>
         </li>
+        
+        <li>
+            <a href="events_manager.php" class="<?php echo $currentPage == 'events_manager.php' ? 'active' : ''; ?>">
+                <i class="fas fa-calendar-check"></i> <span>Eventos</span>
+            </a>
+        </li>
+
         <li>
             <a href="enrollments.php" class="<?php echo $currentPage == 'enrollments.php' ? 'active' : ''; ?>">
                 <i class="fas fa-user-graduate"></i> <span>Matrículas</span>

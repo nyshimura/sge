@@ -5,33 +5,55 @@ include '../includes/admin_header.php';
 
 checkRole(['admin', 'superadmin']);
 
-// --- LÓGICA DE GERAÇÃO EM MASSA (CERTIFICADOS) ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'bulk_cert_generate') {
-    $cId = (int)$_POST['course_id'];
-    $count = 0;
+// --- 1. LÓGICA DE GERAÇÃO EM MASSA (CERTIFICADOS) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    
+    // A. GERAR CERTIFICADOS
+    if ($_POST['action'] === 'bulk_cert_generate') {
+        $cId = (int)$_POST['course_id'];
+        $count = 0;
 
-    try {
-        $stmtEligible = $pdo->prepare("SELECT studentId FROM enrollments WHERE courseId = ? AND status IN ('Aprovada', 'Concluido', 'Ativo')");
-        $stmtEligible->execute([$cId]);
-        $students = $stmtEligible->fetchAll(PDO::FETCH_COLUMN);
+        try {
+            $stmtEligible = $pdo->prepare("SELECT studentId FROM enrollments WHERE courseId = ? AND status IN ('Aprovada', 'Concluido', 'Ativo')");
+            $stmtEligible->execute([$cId]);
+            $students = $stmtEligible->fetchAll(PDO::FETCH_COLUMN);
 
-        foreach ($students as $sid) {
-            $check = $pdo->prepare("SELECT id FROM certificates WHERE student_id = ? AND course_id = ?");
-            $check->execute([$sid, $cId]);
+            foreach ($students as $sid) {
+                $check = $pdo->prepare("SELECT id FROM certificates WHERE student_id = ? AND course_id = ?");
+                $check->execute([$sid, $cId]);
+                
+                if ($check->rowCount() == 0) {
+                    $hash = hash('sha256', uniqid($sid . $cId . microtime(), true));
+                    $ins = $pdo->prepare("INSERT INTO certificates (student_id, course_id, verification_hash, completion_date, generated_at) VALUES (?, ?, ?, NOW(), NOW())");
+                    $ins->execute([$sid, $cId, $hash]);
+                    $count++;
+                }
+            }
             
-            if ($check->rowCount() == 0) {
-                $hash = hash('sha256', uniqid($sid . $cId . microtime(), true));
-                $ins = $pdo->prepare("INSERT INTO certificates (student_id, course_id, verification_hash, completion_date, generated_at) VALUES (?, ?, ?, NOW(), NOW())");
-                $ins->execute([$sid, $cId, $hash]);
-                $count++;
+            header("Location: courses.php?view=$cId&msg=cert_generated&count=$count");
+            exit;
+
+        } catch (Exception $e) {
+            $msgType = 'error';
+        }
+    }
+
+    // B. CRIAR NOVO TERMO DE COMPROMISSO (EVENTO)
+    elseif ($_POST['action'] === 'create_event_term') {
+        $cId = (int)$_POST['course_id'];
+        $title = trim($_POST['title']);
+        $content = trim($_POST['content']);
+
+        if (!empty($title) && !empty($content)) {
+            try {
+                $stmt = $pdo->prepare("INSERT INTO event_terms (courseId, title, content) VALUES (?, ?, ?)");
+                $stmt->execute([$cId, $title, $content]);
+                header("Location: courses.php?view=$cId&msg=term_created");
+                exit;
+            } catch (Exception $e) {
+                // Erro silencioso ou log
             }
         }
-        
-        header("Location: courses.php?view=$cId&msg=cert_generated&count=$count");
-        exit;
-
-    } catch (Exception $e) {
-        $msgType = 'error';
     }
 }
 
@@ -60,22 +82,23 @@ if ($viewId > 0):
     $stmtS = $pdo->prepare($sqlS);
     $stmtS->execute([$viewId]);
     $students = $stmtS->fetchAll();
+    
+    // Busca Termos já criados para mostrar (opcional, mas útil)
+    $stmtTerms = $pdo->prepare("SELECT * FROM event_terms WHERE courseId = ? AND status = 'active' ORDER BY created_at DESC");
+    $stmtTerms->execute([$viewId]);
+    $existingTerms = $stmtTerms->fetchAll();
 ?>
 
 <style>
     /* ================= MOBILE (Padrão) ================= */
     
-    /* Grid do Header:
-       Linha 1: Título (Esq) | Voltar (Dir)
-       Linha 2: Botões de Ação (Largura Total)
-    */
     .course-header {
         display: grid;
         grid-template-areas: 
             "title back"
             "actions actions";
-        grid-template-columns: 1fr auto; /* Título fluido, Voltar fixo */
-        gap: 15px 10px; /* Gap Vertical 15px, Horizontal 10px */
+        grid-template-columns: 1fr auto; 
+        gap: 15px 10px; 
         margin-bottom: 20px;
         align-items: center;
     }
@@ -87,10 +110,7 @@ if ($viewId > 0):
         line-height: 1.2;
     }
 
-    /* Botão Voltar: Pequeno e no canto */
-    .btn-back-wrapper {
-        grid-area: back;
-    }
+    .btn-back-wrapper { grid-area: back; }
     .btn-back {
         padding: 5px 12px;
         font-size: 0.85rem;
@@ -104,23 +124,24 @@ if ($viewId > 0):
         white-space: nowrap;
     }
 
-    /* Botões de Ação (Gerar e Editar): Em baixo, lado a lado */
+    /* Botões de Ação: Ajustado para wrap se forem muitos */
     .primary-actions {
         grid-area: actions;
         display: flex;
+        flex-wrap: wrap; /* Permite quebrar linha no mobile */
         gap: 10px;
         width: 100%;
     }
     
     .primary-actions .btn-save {
-        flex: 1; /* Ocupam 50% cada */
+        flex: 1; 
+        min-width: 140px; /* Garante tamanho mínimo */
         justify-content: center;
         text-align: center;
-        padding: 12px;
-        font-size: 0.95rem;
+        padding: 10px;
+        font-size: 0.9rem;
     }
 
-    /* Layout do Conteúdo */
     .course-details-grid {
         display: grid;
         grid-template-columns: 1fr;
@@ -135,55 +156,43 @@ if ($viewId > 0):
     .custom-table { min-width: 600px; }
 
 
-    /* ================= DESKTOP (Telas Maiores) ================= */
+    /* ================= DESKTOP ================= */
     @media (min-width: 768px) {
-        /* Volta a ser uma linha só: Título - Ações - Voltar */
         .course-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-
-        /* Título ocupa espaço */
-        .course-title {
-            margin-right: auto;
-        }
-
-        /* Container de botões principais volta ao tamanho natural */
+        .course-title { margin-right: auto; }
         .primary-actions {
             width: auto;
             margin-right: 10px;
+            flex-wrap: nowrap;
         }
         .primary-actions .btn-save {
-            flex: none; /* Tamanho natural do texto */
+            flex: none;
             padding: 8px 15px;
         }
-
-        /* Botão voltar fica por último visualmente */
-        .btn-back-wrapper {
-            order: 2; /* Garante que fique na direita */
-        }
-        .btn-back {
-            padding: 8px 15px; /* Tamanho normal desktop */
-            font-size: 0.9rem;
-        }
-
-        .course-details-grid {
-            grid-template-columns: 300px 1fr; 
-        }
+        .btn-back-wrapper { order: 2; }
+        .btn-back { padding: 8px 15px; font-size: 0.9rem; }
+        .course-details-grid { grid-template-columns: 300px 1fr; }
     }
 </style>
 
 <div class="content-wrapper">
     
-    <?php if(isset($_GET['msg']) && $_GET['msg'] == 'cert_generated'): ?>
-        <div class="alert alert-success" style="margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; display: flex; align-items: center; justify-content: space-between;">
-            <div>
-                <i class="fas fa-check-circle"></i> Processo concluído! 
-                <strong><?php echo (int)$_GET['count']; ?></strong> novos certificados foram gerados.
+    <?php if(isset($_GET['msg'])): ?>
+        <?php if($_GET['msg'] == 'cert_generated'): ?>
+            <div class="alert alert-success" style="margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; display: flex; align-items: center; justify-content: space-between;">
+                <div><i class="fas fa-check-circle"></i> <strong><?php echo (int)$_GET['count']; ?></strong> certificados gerados.</div>
+                <span style="cursor:pointer;" onclick="this.parentElement.remove();">&times;</span>
             </div>
-            <span style="cursor:pointer; font-weight:bold;" onclick="this.parentElement.remove();">&times;</span>
-        </div>
+        <?php elseif($_GET['msg'] == 'term_created'): ?>
+            <div class="alert alert-success" style="margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; display: flex; align-items: center; justify-content: space-between;">
+                <div><i class="fas fa-file-signature"></i> Novo termo de compromisso criado! Os alunos verão na área deles.</div>
+                <span style="cursor:pointer;" onclick="this.parentElement.remove();">&times;</span>
+            </div>
+        <?php endif; ?>
     <?php endif; ?>
 
     <div class="course-header">
@@ -193,14 +202,16 @@ if ($viewId > 0):
         </h3>
         
         <div class="btn-back-wrapper">
-            <a href="courses.php" class="btn-back">
-                <i class="fas fa-arrow-left"></i> Voltar
-            </a>
+            <a href="courses.php" class="btn-back"><i class="fas fa-arrow-left"></i> Voltar</a>
         </div>
 
         <div class="primary-actions">
+            <button onclick="openTermModal()" class="btn-save" style="background:#8e44ad; color:white; border:none; cursor:pointer; display:flex; align-items:center; gap:8px;">
+                <i class="fas fa-file-contract"></i> Novo Compromisso
+            </button>
+
             <button onclick="openBulkCertModal()" class="btn-save" style="background:#f39c12; color:white; border:none; cursor:pointer; display:flex; align-items:center; gap:8px;">
-                <i class="fas fa-certificate"></i> Gerar Certificados
+                <i class="fas fa-certificate"></i> Certificados
             </button>
 
             <a href="course_form.php?id=<?php echo $viewId; ?>" class="btn-save" style="background:#3498db; text-decoration:none; display:flex; align-items:center; gap:8px;">
@@ -232,6 +243,22 @@ if ($viewId > 0):
 
             <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
             
+            <h4 style="margin-bottom: 10px; font-size: 1rem;">Termos Ativos</h4>
+            <?php if(empty($existingTerms)): ?>
+                <div style="color: #999; font-size: 0.85rem;">Nenhum evento criado.</div>
+            <?php else: ?>
+                <ul style="list-style: none; padding: 0; font-size: 0.85rem;">
+                    <?php foreach($existingTerms as $term): ?>
+                        <li style="margin-bottom: 5px; padding: 5px; background: #f9f9f9; border-left: 3px solid #8e44ad;">
+                            <?php echo htmlspecialchars($term['title']); ?>
+                            <small style="display:block; color:#777;"><?php echo date('d/m/Y', strtotime($term['created_at'])); ?></small>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
+
+            <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
+
             <h4 style="margin-bottom: 10px; font-size: 1rem;">Professores</h4>
             <?php if(empty($teachers)): ?>
                 <div style="color: #999; font-size: 0.9rem;">Nenhum atribuído.</div>
@@ -299,35 +326,55 @@ if ($viewId > 0):
 
 <div id="bulkCertModal" class="modal-overlay" style="display: none;">
     <div class="modal-content" style="max-width: 450px; text-align: center; width: 90%;">
-        <div style="margin-bottom: 15px;">
-            <i class="fas fa-award" style="font-size: 3rem; color: #f39c12;"></i>
-        </div>
+        <div style="margin-bottom: 15px;"><i class="fas fa-award" style="font-size: 3rem; color: #f39c12;"></i></div>
         <h3 style="margin-bottom: 10px; color: #333;">Gerar Certificados em Massa?</h3>
         <p style="color: #666; margin-bottom: 20px; font-size: 0.95rem; line-height: 1.5;">
             Esta ação irá gerar certificados automaticamente para <strong>todos</strong> os alunos deste curso com matrícula <strong>Aprovada</strong> ou <strong>Concluída</strong>.
-            <br><br>
-            <small style="color: #888;">* Alunos que já possuem certificado serão ignorados para evitar duplicidade.</small>
+            <br><small style="color: #888;">* Alunos que já possuem certificado serão ignorados.</small>
         </p>
-        
         <form method="POST">
             <input type="hidden" name="action" value="bulk_cert_generate">
             <input type="hidden" name="course_id" value="<?php echo $viewId; ?>">
-            
             <div style="text-align: left; background: #fdf8e4; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #fae5b0;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <input type="checkbox" id="checkBulkCert" style="width: 20px; height: 20px; cursor: pointer;">
-                    <label for="checkBulkCert" style="font-size: 0.9rem; color: #8a6d3b; cursor: pointer; user-select: none; font-weight: 600;">
-                        Estou ciente e desejo gerar os certificados.
-                    </label>
+                    <label for="checkBulkCert" style="font-size: 0.9rem; color: #8a6d3b; cursor: pointer; user-select: none; font-weight: 600;">Estou ciente e desejo gerar os certificados.</label>
                 </div>
             </div>
-
             <div class="modal-actions" style="justify-content: center; flex-wrap: wrap; gap: 10px;">
                 <button type="button" class="btn-save" style="background: #95a5a6; flex: 1;" onclick="document.getElementById('bulkCertModal').style.display='none'">Cancelar</button>
-                
-                <button type="submit" id="btnConfirmBulkCert" class="btn-save btn-disabled" style="background: #f39c12; opacity: 0.6; pointer-events: none; cursor: not-allowed; flex: 1;">
-                    Confirmar
-                </button>
+                <button type="submit" id="btnConfirmBulkCert" class="btn-save btn-disabled" style="background: #f39c12; opacity: 0.6; pointer-events: none; cursor: not-allowed; flex: 1;">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="termModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 600px; width: 95%;">
+        <div style="margin-bottom: 15px; text-align: center;">
+            <i class="fas fa-file-contract" style="font-size: 2.5rem; color: #8e44ad;"></i>
+        </div>
+        <h3 style="margin-bottom: 5px; color: #333; text-align: center;">Criar Termo de Compromisso</h3>
+        <p style="color: #666; font-size: 0.9rem; text-align: center; margin-bottom: 20px;">Isso irá disponibilizar um termo para todos os alunos deste curso assinarem.</p>
+        
+        <form action="actions/create_event_term.php" method="POST">
+            <input type="hidden" name="action" value="create_event_term">
+            <input type="hidden" name="course_id" value="<?php echo $viewId; ?>">
+            
+            <div class="form-group">
+                <label style="font-weight: bold; color: #555;">Título do Evento / Termo</label>
+                <input type="text" name="title" class="form-control" placeholder="Ex: Apresentação de Final de Ano 2024" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label style="font-weight: bold; color: #555;">Conteúdo do Termo</label>
+                <textarea name="content" class="form-control" rows="8" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: sans-serif; line-height: 1.5;">Eu, aluno(a) regularmente matriculado(a), declaro estar ciente e de acordo com a minha participação no evento mencionado, comprometendo-me a comparecer aos ensaios e apresentações nas datas estipuladas.</textarea>
+                <small style="color: #888;">* O aluno terá opção de "Aceitar" ou "Declinar" este termo.</small>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 20px; display: flex; gap: 10px;">
+                <button type="button" class="btn-save" style="background: #95a5a6; flex: 1;" onclick="document.getElementById('termModal').style.display='none'">Cancelar</button>
+                <button type="submit" class="btn-save" style="background: #8e44ad; flex: 1;">Criar e Notificar</button>
             </div>
         </form>
     </div>
@@ -338,31 +385,26 @@ if ($viewId > 0):
         document.getElementById('bulkCertModal').style.display = 'flex';
         document.getElementById('checkBulkCert').checked = false;
         const btn = document.getElementById('btnConfirmBulkCert');
-        btn.style.opacity = '0.6';
-        btn.style.pointerEvents = 'none';
-        btn.style.cursor = 'not-allowed';
-        btn.classList.add('btn-disabled');
+        btn.style.opacity = '0.6'; btn.style.pointerEvents = 'none'; btn.style.cursor = 'not-allowed'; btn.classList.add('btn-disabled');
+    }
+
+    function openTermModal() {
+        document.getElementById('termModal').style.display = 'flex';
     }
 
     document.getElementById('checkBulkCert').addEventListener('change', function() {
         const btn = document.getElementById('btnConfirmBulkCert');
         if(this.checked) {
-            btn.style.opacity = '1';
-            btn.style.pointerEvents = 'auto';
-            btn.style.cursor = 'pointer';
-            btn.classList.remove('btn-disabled');
+            btn.style.opacity = '1'; btn.style.pointerEvents = 'auto'; btn.style.cursor = 'pointer'; btn.classList.remove('btn-disabled');
         } else {
-            btn.style.opacity = '0.6';
-            btn.style.pointerEvents = 'none';
-            btn.style.cursor = 'not-allowed';
-            btn.classList.add('btn-disabled');
+            btn.style.opacity = '0.6'; btn.style.pointerEvents = 'none'; btn.style.cursor = 'not-allowed'; btn.classList.add('btn-disabled');
         }
     });
 </script>
 
 <?php else: 
 // ==========================================
-// === MODO LISTAGEM (CÓDIGO ORIGINAL) ===
+// === MODO LISTAGEM ===
 // ==========================================
 
 $msg = '';
@@ -547,8 +589,10 @@ try {
     window.onclick = function(event) {
         const modal = document.getElementById('deleteModal');
         const bulkModal = document.getElementById('bulkCertModal');
+        const termModal = document.getElementById('termModal');
         if (event.target == modal) closeDeleteModal();
         if (bulkModal && event.target == bulkModal) bulkModal.style.display = 'none';
+        if (termModal && event.target == termModal) termModal.style.display = 'none';
     }
 </script>
 

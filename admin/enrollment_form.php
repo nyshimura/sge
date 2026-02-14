@@ -5,11 +5,11 @@
 ob_start();
 session_start();
 
-// CAMINHOS SEGUROS (Funciona na raiz ou em /sge)
+// CAMINHOS SEGUROS
 require_once __DIR__ . '/../config/database.php'; 
 require_once __DIR__ . '/../includes/enrollment_logic.php'; 
 
-// Debug (Desative em produção se preferir)
+// Debug
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -86,13 +86,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_action'])) {
     }
 }
 
-// C: PROCESSAMENTO DA MATRÍCULA
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !isset($_POST['payment_action'])) {
+// C: RESETAR TERMO DE COMPROMISSO
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reset_term_response') {
+    $termId = (int)$_POST['term_id'];
+    $r_sid = (int)$_POST['studentId'];
+    $r_cid = (int)$_POST['courseId'];
+    
+    // Deleta a resposta para que o termo apareça novamente para o aluno
+    $stmtDel = $pdo->prepare("DELETE FROM event_term_responses WHERE term_id = ? AND studentId = ?");
+    $stmtDel->execute([$termId, $r_sid]);
+    
+    header("Location: enrollment_form.php?sid=$r_sid&cid=$r_cid&msg=term_reset");
+    exit;
+}
+
+// D: PROCESSAMENTO DA MATRÍCULA (PRINCIPAL)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !isset($_POST['payment_action']) && !isset($_POST['action'])) {
     $sid = (int)$_POST['studentId'];
     $cid = (int)$_POST['courseId'];
     $status = $_POST['status'];
     
-    // Tratamento universal de Float (troca vírgula por ponto)
+    // Tratamento universal de Float
     $scholarship = isset($_POST['scholarshipPercentage']) ? (float)str_replace(',', '.', $_POST['scholarshipPercentage']) : 0.0;
     $inputFee = isset($_POST['customMonthlyFee']) ? (float)str_replace(',', '.', $_POST['customMonthlyFee']) : 0.0;
     
@@ -108,15 +122,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !i
     $finalFee = $baseFee;
     $customFeeToSave = null; 
 
-    // Lógica de Prioridade: Se o usuário preencheu o VALOR, calculamos a bolsa com base nele.
-    // Se preencheu a BOLSA, calculamos o valor.
-    // No PHP, confiamos nos valores enviados, mas revalidamos a consistência.
-    
-    // Se o valor enviado for diferente do base, usamos ele como prioridade
     if ($inputFee >= 0) {
         $finalFee = $inputFee;
         $customFeeToSave = $finalFee;
-        // Recalcula a bolsa para salvar porcentagem correta no banco (opcional, mas bom para consistência)
         if ($baseFee > 0) {
             $scholarship = (($baseFee - $finalFee) / $baseFee) * 100;
         } else {
@@ -143,7 +151,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !i
             $msgType = 'created';
         }
 
-        // Enrollment Logic
         if ($status === 'Cancelada') {
             cancelarMatricula($pdo, $sid, $cid, $finalFee);
         }
@@ -151,7 +158,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !i
             if ($finalFee > 0.01) {
                 reativarMatricula($pdo, $sid, $cid, $finalFee, $dueDay, $startDay);
             } else {
-                // Bolsa 100% -> limpa futuro
                 $primeiroDiaMesAtual = date('Y-m-01');
                 $dataCorte = ($startDay > $primeiroDiaMesAtual) ? $startDay : $primeiroDiaMesAtual;
                 $del = $pdo->prepare("DELETE FROM payments WHERE studentId=:s AND courseId=:c AND status='Pendente' AND dueDate >= :cutoff");
@@ -196,7 +202,18 @@ if ($isEdit) {
     $stmtCert->execute([':s'=>$studentId, ':c'=>$courseId]);
     $certificates = $stmtCert->fetchAll(PDO::FETCH_ASSOC);
     
-    // Pega preço base salvo no curso para o JS caso select esteja desativado
+    // BUSCA TERMOS DE EVENTOS/COMPROMISSO DO ALUNO
+    $stmtEvt = $pdo->prepare("
+        SELECT t.id, t.title, t.created_at, r.status as response_status, r.responded_at
+        FROM event_terms t
+        LEFT JOIN event_term_responses r ON t.id = r.term_id AND r.studentId = :sid
+        WHERE t.courseId = :cid
+        ORDER BY t.created_at DESC
+    ");
+    $stmtEvt->execute([':sid' => $studentId, ':cid' => $courseId]);
+    $studentEvents = $stmtEvt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Pega preço base
     $stmtC = $pdo->prepare("SELECT monthlyFee FROM courses WHERE id = :id");
     $stmtC->execute([':id' => $courseId]);
     $currentCourseData = $stmtC->fetch();
@@ -214,7 +231,6 @@ checkRole(['admin', 'superadmin']);
     
     <div class="card-box" style="max-width: 800px; margin: 0 auto 30px auto;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-            
             <h2><?php echo $isEdit ? 'Editar Matrícula' : 'Nova Matrícula'; ?></h2>
             <a href="enrollments.php" class="btn-back" ><i class="fas fa-arrow-left"></i> Voltar</a>
         </div>
@@ -222,10 +238,13 @@ checkRole(['admin', 'superadmin']);
         <?php if (isset($error)): ?><div class="alert alert-danger"><?php echo $error; ?></div><?php endif; ?>
         <?php if (isset($_GET['msg'])): ?>
             <script>
-                // Mostra o toast se vier mensagem via GET
                 document.addEventListener('DOMContentLoaded', function() {
-                    var msg = "<?php echo $_GET['msg'] == 'updated' ? 'Dados atualizados!' : ($_GET['msg'] == 'created' ? 'Matrícula criada!' : 'Operação realizada!'); ?>";
-                    showToast(msg);
+                    var m = "<?php echo $_GET['msg']; ?>";
+                    var msgText = "Operação realizada!";
+                    if(m == 'updated') msgText = 'Dados atualizados!';
+                    if(m == 'created') msgText = 'Matrícula criada!';
+                    if(m == 'term_reset') msgText = 'Termo reativado para o aluno!';
+                    showToast(msgText);
                 });
             </script>
         <?php endif; ?>
@@ -342,7 +361,8 @@ checkRole(['admin', 'superadmin']);
             <h4 style="margin-bottom: 20px; color: #2c3e50; display: flex; align-items: center; gap: 10px;">
                 <i class="fas fa-file-contract"></i> Contratos e Termos
             </h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
                 <div class="doc-card <?php echo !empty($enrollment['contractAcceptedAt']) ? 'doc-signed' : ''; ?>">
                     <div class="doc-icon"><i class="fas fa-file-signature"></i></div>
                     <div class="doc-info">
@@ -370,6 +390,59 @@ checkRole(['admin', 'superadmin']);
                     </div>
                 </div>
             </div>
+
+            <hr style="border:0; border-top:1px solid #eee; margin-bottom: 15px;">
+            <h5 style="color:#555; margin-bottom:15px;">Termos de Compromisso (Eventos/Turnês)</h5>
+            
+            <?php if(empty($studentEvents)): ?>
+                <p style="color:#999; font-style:italic; text-align:center;">Nenhum termo extra criado para este curso.</p>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table-custom">
+                        <thead>
+                            <tr>
+                                <th>Evento</th>
+                                <th>Status do Aluno</th>
+                                <th>Data Resposta</th>
+                                <th style="text-align:right;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach($studentEvents as $evt): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($evt['title']); ?></strong><br>
+                                        <small style="color:#999;">Criado em: <?php echo date('d/m/Y', strtotime($evt['created_at'])); ?></small>
+                                    </td>
+                                    <td>
+                                        <?php if($evt['response_status'] == 'accepted'): ?>
+                                            <span class="badge badge-success"><i class="fas fa-check"></i> Aceito</span>
+                                        <?php elseif($evt['response_status'] == 'declined'): ?>
+                                            <span class="badge badge-danger"><i class="fas fa-times"></i> Recusado</span>
+                                        <?php else: ?>
+                                            <span class="badge badge-warning"><i class="fas fa-clock"></i> Pendente</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php echo $evt['responded_at'] ? date('d/m/Y H:i', strtotime($evt['responded_at'])) : '-'; ?>
+                                    </td>
+                                    <td style="text-align:right;">
+                                        <?php if($evt['response_status']): ?>
+                                            <button type="button" class="btn-revert" style="font-size:0.8rem; padding:4px 8px;" title="Reenviar Notificação / Resetar" 
+                                                onclick="openResetTermModal(<?php echo $evt['id']; ?>)">
+                                                <i class="fas fa-redo"></i> Reativar
+                                            </button>
+                                        <?php else: ?>
+                                            <span style="color:#ccc; font-size:0.8rem;">Aguardando...</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+
         </div>
 
         <div class="card-box" style="max-width: 800px; margin: 0 auto 30px auto;">
@@ -501,27 +574,47 @@ checkRole(['admin', 'superadmin']);
     </div>
 </div>
 
+<div id="resetTermModal" class="modal-overlay" style="display: none;">
+    <div class="modal-card confirm-card" style="border-top: 4px solid #17a2b8;">
+        <div class="modal-icon-wrapper" style="background-color: #e0f7fa;"><i class="fas fa-redo" style="color: #17a2b8;"></i></div>
+        <h3 class="modal-h3">Reativar Notificação?</h3>
+        <p class="modal-p">Isso apagará a resposta atual (Aceite ou Recusa). O termo aparecerá novamente no painel do aluno como PENDENTE.</p>
+        <form method="POST">
+            <input type="hidden" name="action" value="reset_term_response">
+            <input type="hidden" name="term_id" id="resetTermIdInput">
+            <input type="hidden" name="studentId" value="<?php echo $studentId; ?>">
+            <input type="hidden" name="courseId" value="<?php echo $courseId; ?>">
+            
+            <div class="modal-check-wrapper">
+                <input type="checkbox" id="checkResetConfirm">
+                <label for="checkResetConfirm">Estou ciente.</label>
+            </div>
+            
+            <div class="modal-actions">
+                <button type="button" class="btn-modal-cancel" onclick="closeResetTermModal()">Cancelar</button>
+                <button type="submit" class="btn-modal-confirm" id="btnResetConfirm" disabled style="background-color: #17a2b8;">Confirmar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     const fineMonthsConfig = <?php echo $fineMonths; ?>; 
 
     // --- CÁLCULO DE VALORES EM TEMPO REAL ---
     function getBasePrice() {
         const select = document.getElementById('courseSelect');
-        // Se estiver desativado (edição), pega do hidden
         if (select.disabled) {
             return parseFloat(document.getElementById('hiddenBasePrice').value) || 0;
         }
-        // Se estiver ativado, pega do data-price da opção selecionada
         if (select.selectedIndex !== -1) {
             return parseFloat(select.options[select.selectedIndex].getAttribute('data-price')) || 0;
         }
         return 0;
     }
 
-    // Função 1: Mudou a BOLSA -> Calcula o VALOR
     function calculateFromScholarship() {
         const basePrice = getBasePrice();
-        
         let scholarStr = document.getElementById('scholarshipInput').value;
         scholarStr = scholarStr.toString().replace(',', '.');
         const scholarship = parseFloat(scholarStr) || 0;
@@ -531,14 +624,12 @@ checkRole(['admin', 'superadmin']);
             const discount = basePrice * (scholarship / 100);
             finalPrice = Math.max(0, basePrice - discount);
         }
-        
         document.getElementById('feeInput').value = finalPrice.toFixed(2);
     }
 
-    // Função 2: Mudou o VALOR -> Calcula a BOLSA
     function calculateFromFee() {
         const basePrice = getBasePrice();
-        if (basePrice <= 0) return; // Evita divisão por zero
+        if (basePrice <= 0) return; 
 
         let feeStr = document.getElementById('feeInput').value;
         feeStr = feeStr.toString().replace(',', '.');
@@ -548,22 +639,17 @@ checkRole(['admin', 'superadmin']);
         if (fee < basePrice) {
             scholarship = ((basePrice - fee) / basePrice) * 100;
         }
-
-        // Atualiza o input de Bolsa com 2 casas decimais
         document.getElementById('scholarshipInput').value = scholarship.toFixed(2);
     }
 
     function updateBasePrice() { calculateFromScholarship(); }
 
-    // Garante que o cálculo rode ao carregar a página
     window.addEventListener('DOMContentLoaded', () => {
         const select = document.getElementById('courseSelect');
         if (select.disabled) {
             const option = select.querySelector('option[selected]');
             if (option) document.getElementById('hiddenBasePrice').value = option.getAttribute('data-price');
         }
-        // Não recalculamos ao carregar para não sobrescrever valores manuais existentes
-        // calculateFromScholarship(); 
     });
 
     // --- TOAST FEEDBACK ---
@@ -574,8 +660,7 @@ checkRole(['admin', 'superadmin']);
         setTimeout(function(){ toast.className = toast.className.replace("show", ""); }, 3000);
     }
 
-    // --- MODAIS (CÓDIGO ANTERIOR) ---
-    // ... (Mantém a lógica dos modais de cancelamento e pagamento) ...
+    // --- MODAIS ---
     
     document.getElementById('mainEnrollmentForm').addEventListener('submit', function(event) {
         const select = document.getElementById('statusSelect');
@@ -653,10 +738,77 @@ checkRole(['admin', 'superadmin']);
         }
     });
 
+    // --- Certificados ---
+    const certModal = document.getElementById('certModal');
+    const checkCertConfirm = document.getElementById('checkCertConfirm');
+    const btnCertConfirm = document.getElementById('btnCertConfirm');
+
+    function openCertModal(action, id = 0) {
+        document.getElementById('certActionInput').value = action;
+        document.getElementById('certIdInput').value = id;
+        checkCertConfirm.checked = false;
+        btnCertConfirm.disabled = true;
+        btnCertConfirm.classList.remove('active', 'active-danger');
+        document.getElementById('customWorkloadField').style.display = 'none';
+
+        if (action === 'generate') {
+            document.getElementById('modalTitle').innerText = "Gerar Certificado";
+            document.getElementById('modalText').innerText = "Deseja emitir um novo certificado para este aluno?";
+            document.getElementById('modalIcon').className = "fas fa-award";
+            document.getElementById('modalIconWrapper').style.background = "#fdf8e4";
+            document.getElementById('modalIcon').style.color = "#f39c12";
+            btnCertConfirm.innerText = "Emitir";
+            document.getElementById('customWorkloadField').style.display = 'block';
+        } else {
+            document.getElementById('modalTitle').innerText = "Revogar Certificado?";
+            document.getElementById('modalText').innerText = "Esta ação é irreversível. O certificado será excluído.";
+            document.getElementById('modalIcon').className = "fas fa-trash";
+            document.getElementById('modalIconWrapper').style.background = "#fdedec";
+            document.getElementById('modalIcon').style.color = "#c0392b";
+            btnCertConfirm.innerText = "Revogar";
+        }
+        certModal.style.display = 'flex';
+    }
+
+    function closeCertModal() { certModal.style.display = 'none'; }
+
+    checkCertConfirm.addEventListener('change', function() {
+        btnCertConfirm.disabled = !this.checked;
+        if (this.checked) {
+            if (document.getElementById('certActionInput').value === 'revoke') btnCertConfirm.classList.add('active-danger');
+            else btnCertConfirm.classList.add('active');
+        } else {
+            btnCertConfirm.classList.remove('active', 'active-danger');
+        }
+    });
+
+    // --- Resetar Termo (Novo) ---
+    const resetModal = document.getElementById('resetTermModal');
+    const checkReset = document.getElementById('checkResetConfirm');
+    const btnReset = document.getElementById('btnResetConfirm');
+
+    function openResetTermModal(termId) {
+        document.getElementById('resetTermIdInput').value = termId;
+        checkReset.checked = false;
+        btnReset.disabled = true;
+        btnReset.style.opacity = "0.6";
+        resetModal.style.display = 'flex';
+    }
+
+    function closeResetTermModal() {
+        resetModal.style.display = 'none';
+    }
+
+    checkReset.addEventListener('change', function() {
+        btnReset.disabled = !this.checked;
+        btnReset.style.opacity = this.checked ? "1" : "0.6";
+    });
+
     window.onclick = function(event) {
         if (event.target == certModal) closeCertModal();
         if (event.target == document.getElementById('payModal')) document.getElementById('payModal').style.display='none';
         if (event.target == document.getElementById('cancelFineModal')) closeCancelModal();
+        if (event.target == resetModal) closeResetTermModal();
     }
 </script>
 
@@ -675,6 +827,8 @@ checkRole(['admin', 'superadmin']);
     .btn-doc { padding: 6px 12px; background: #3498db; color: white; border-radius: 4px; text-decoration: none; font-size: 0.85rem; }
     .btn-pay { background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
     .btn-revert { background: #fff; color: #e67e22; border: 1px solid #e67e22; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    .btn-issue { background: #f39c12; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; display:flex; align-items:center; gap:5px;}
+    .btn-revoke { background: white; color: #c0392b; border: 1px solid #c0392b; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
     .btn-action-group { display: flex; gap: 8px; }
     .table-custom { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; border: 1px solid #eef2f7; border-radius: 6px; }
     .table-custom th { padding: 12px; background: #f8f9fa; text-align: left; }
@@ -714,10 +868,12 @@ checkRole(['admin', 'superadmin']);
 
     /* Modais */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; }
-    .modal-card { background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; text-align: center; }
+    .modal-card { background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; text-align: center; position: relative;}
     .modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
     .btn-modal-cancel { background: #e0e0e0; color: #333; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: 600; }
     .btn-modal-confirm { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+    .modal-icon-wrapper { width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px auto; font-size: 1.8rem; }
+    .modal-check-wrapper { margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.9rem; color: #555; }
 </style>
 
 <?php include '../includes/admin_footer.php'; ?>

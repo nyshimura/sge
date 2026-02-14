@@ -212,6 +212,7 @@ function getMigrations() {
                 CONSTRAINT `event_terms_ibfk_1` FOREIGN KEY (`courseId`) REFERENCES `courses` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
         ],
+        ['type'=>'col', 't'=>'event_terms', 'c'=>'status', 'sql'=>"ALTER TABLE `event_terms` ADD COLUMN `status` ENUM('active', 'concluded') NOT NULL DEFAULT 'active' AFTER `content`"],
         [
             'type' => 'tbl', 
             't' => 'event_term_responses', 

@@ -6,18 +6,16 @@ if (session_status() == PHP_SESSION_NONE) session_start();
 require_once '../config/database.php';
 
 // IMPORTANTE: Agora carregamos o Motor Central do Pix
-// Certifique-se de ter criado o arquivo includes/pix_engine.php com o código que passei antes
 if (file_exists('../includes/pix_engine.php')) {
     require_once '../includes/pix_engine.php';
 } else {
-    // Fallback caso o motor não exista (evita erro fatal, mas avisa)
     die("Erro crítico: O arquivo includes/pix_engine.php não foi encontrado.");
 }
 
 $studentId = $_SESSION['user_id'];
 $feedbackMsg = '';
 
-// --- LÓGICA 1: PROCESSAR ASSINATURA EM MASSA (MANTIDA) ---
+// --- LÓGICA 1: PROCESSAR ASSINATURA EM MASSA (TERMOS DE USO GERAIS) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'sign_all_pending') {
     try {
         $stmtUpdate = $pdo->prepare("
@@ -28,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             AND (termsAcceptedAt IS NULL OR termsAcceptedAt = '0000-00-00 00:00:00')
         ");
         $stmtUpdate->execute([':uid' => $studentId]);
-        
         if ($stmtUpdate->rowCount() > 0) {
             $feedbackMsg = 'success_terms';
         }
@@ -37,15 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// --- LÓGICA 2: AJAX PIX (AGORA VIA MOTOR CENTRAL) ---
-// Isso garante que se você estiver usando Pix Manual, ele funcione. 
-// Se ativar o Inter no futuro, funciona automaticamente.
+// --- LÓGICA 2: AJAX PIX ---
 if (isset($_GET['action']) && $_GET['action'] === 'get_pix' && isset($_GET['pid'])) {
     header('Content-Type: application/json');
-    
-    // Chama o motor que decide qual banco usar (Inter > MP > Manual)
     $response = processPixRequest((int)$_GET['pid'], $_SESSION['user_id'], $pdo);
-    
     echo json_encode($response);
     exit;
 }
@@ -53,7 +45,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_pix' && isset($_GET['pid'
 $pageTitle = "Painel do Aluno";
 include '../includes/student_header.php';
 
-// --- CONSULTAS PADRÃO (MANTIDAS EXATAMENTE COMO NO SEU CÓDIGO) ---
+// --- CONSULTAS PADRÃO ---
 $stmtCourses = $pdo->prepare("SELECT c.id, c.name, c.thumbnail, e.status, e.customMonthlyFee, e.scholarshipPercentage, c.monthlyFee, e.enrollmentDate FROM enrollments e JOIN courses c ON e.courseId = c.id WHERE e.studentId = :uid AND e.status IN ('Aprovada', 'Ativo') ORDER BY e.enrollmentDate DESC");
 $stmtCourses->execute([':uid' => $studentId]);
 $activeCourses = $stmtCourses->fetchAll();
@@ -71,7 +63,7 @@ try {
     $openInvoices = [];
 }
 
-// --- VERIFICAÇÃO DE TERMOS PENDENTES ---
+// --- VERIFICAÇÃO DE TERMOS DE USO GERAIS PENDENTES ---
 $stmtTerms = $pdo->prepare("
     SELECT c.name as courseName 
     FROM enrollments e 
@@ -82,6 +74,23 @@ $stmtTerms = $pdo->prepare("
 ");
 $stmtTerms->execute([':uid' => $studentId]);
 $pendingTerms = $stmtTerms->fetchAll(PDO::FETCH_ASSOC);
+
+// --- VERIFICAÇÃO DE EVENTOS/TURNÊS PENDENTES ---
+$sqlEvents = "
+    SELECT t.id, t.title, t.content, c.name as course_name 
+    FROM event_terms t
+    JOIN courses c ON t.courseId = c.id
+    JOIN enrollments e ON e.courseId = c.id
+    WHERE e.studentId = :sid
+    AND e.status IN ('Aprovada', 'Ativo')
+    AND t.id NOT IN (
+        SELECT term_id FROM event_term_responses WHERE studentId = :sid
+    )
+";
+$stmtEvt = $pdo->prepare($sqlEvents);
+$stmtEvt->execute([':sid' => $studentId]);
+$pendingEvents = $stmtEvt->fetchAll(PDO::FETCH_ASSOC);
+
 
 // Cálculo da mensalidade total ativa
 $totalMensalidade = 0;
@@ -97,13 +106,12 @@ foreach($activeCourses as $ac) {
 ?>
 
 <style>
-    /* --- Scrollbar Local --- */
+    /* --- Styles mantidos do original --- */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background-color: #bdc3c7; border-radius: 4px; border: none; }
     ::-webkit-scrollbar-thumb:hover { background-color: var(--primary-color); }
 
-    /* --- Stats Grid Responsivo --- */
     .dashboard-stats { 
         display: grid; 
         grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); 
@@ -135,7 +143,6 @@ foreach($activeCourses as $ac) {
     .stat-info h4 { margin: 0 0 5px; font-size: 0.85rem; color: #7f8c8d; text-transform: uppercase; font-weight: 600; }
     .stat-info p { margin: 0; font-size: 1.4rem; font-weight: bold; color: #333; }
 
-    /* --- Headers --- */
     .section-header { 
         display: flex; justify-content: space-between; align-items: center; 
         margin-bottom: 15px; margin-top: 30px; 
@@ -143,7 +150,6 @@ foreach($activeCourses as $ac) {
     .section-title { font-size: 1.2rem; font-weight: 700; color: #2c3e50; margin: 0; display: flex; align-items: center; gap: 8px; }
     .view-all-link { font-size: 0.9rem; color: var(--primary-color); font-weight: 600; text-decoration: none; }
 
-    /* --- Cursos Grid --- */
     .courses-grid { 
         display: grid; 
         grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); 
@@ -181,7 +187,6 @@ foreach($activeCourses as $ac) {
     }
     .btn-access-sm:hover { background-color: var(--secondary-color); }
 
-    /* --- Tabelas & Listas --- */
     .table-responsive {
         width: 100%;
         overflow-x: auto;
@@ -194,7 +199,6 @@ foreach($activeCourses as $ac) {
     
     .btn-pix { background: #32bcad; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; font-weight: bold; display: inline-flex; align-items: center; gap: 5px; }
     
-    /* Layout das Colunas Inferiores */
     .bottom-cols {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -202,21 +206,35 @@ foreach($activeCourses as $ac) {
         margin-top: 40px;
     }
 
-    /* Modal QR Atualizado */
-    #pixModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center; backdrop-filter: blur(2px); padding: 20px; box-sizing: border-box; }
+    /* Modal Genérico */
+    .modal-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center; backdrop-filter: blur(2px); padding: 20px; box-sizing: border-box; }
+    .modal-card-custom { background:#fff; border-radius:10px; max-width:500px; width:100%; position:relative; display:flex; flex-direction:column; max-height: 90vh; }
+    .modal-header { padding: 15px; border-bottom: 1px solid #eee; font-weight: bold; font-size: 1.1rem; display: flex; justify-content: space-between; align-items: center; }
+    .modal-body { padding: 20px; overflow-y: auto; }
+    .modal-footer { padding: 15px; border-top: 1px solid #eee; text-align: right; display: flex; justify-content: flex-end; gap: 10px; }
+
     .qr-container { background:#fff; padding:15px; border-radius:12px; display:inline-block; border:1px solid #eee; margin-bottom:15px; }
-    
     .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-    /* ESTILO NOVO: PENDÊNCIAS DE TERMOS */
+    /* --- NOVA ÁREA URGENTE (NOTIFICAÇÕES) --- */
+    .urgent-notifications {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); /* Desktop: Lado a Lado / Mobile: Empilhado */
+        gap: 20px;
+        margin-bottom: 54px; /* Espaço antes dos cursos */
+    }
+
+    /* ESTILO: PENDÊNCIAS DE TERMOS (Amarelo) */
     .pending-terms-box {
         background-color: #fff3cd;
         border: 1px solid #ffeeba;
         border-radius: 8px;
         padding: 20px;
-        margin-top: 25px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+        height: 100%; /* Para alinhar alturas se lado a lado */
+        display: flex;
+        flex-direction: column;
     }
     .terms-header {
         display: flex;
@@ -237,21 +255,40 @@ foreach($activeCourses as $ac) {
         cursor: pointer;
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 10px;
         font-size: 1rem;
         box-shadow: 0 3px 0 #219150;
+        margin-top: auto; /* Empurra para o fundo */
     }
-    .btn-sign-all:hover {
-        background-color: #2ecc71;
-        transform: translateY(-2px);
+    .btn-sign-all:hover { background-color: #2ecc71; transform: translateY(-2px); }
+    .btn-sign-all:active { transform: translateY(0); box-shadow: none; }
+
+    /* ESTILO: PENDÊNCIAS DE EVENTOS (Azul) */
+    .pending-events-box {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        color: #0c5460;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+        height: 100%;
     }
-    .btn-sign-all:active {
-        transform: translateY(0);
-        box-shadow: none;
+    .event-item {
+        background: white;
+        padding: 10px 15px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid #bee5eb;
+        flex-wrap: wrap; /* Para telas muito pequenas */
+        gap: 10px;
     }
 </style>
 
-<div class="content-wrapper" style="padding: 0;">
+<div class="main-content" style="padding: 0;">
     <div class="page-container" style="padding: 30px; max-width: 1400px; margin: 0 auto;">
 
         <?php if ($feedbackMsg === 'success_terms'): ?>
@@ -261,6 +298,12 @@ foreach($activeCourses as $ac) {
                     <strong>Sucesso!</strong><br>
                     Todos os termos pendentes foram assinados e registrados com a data de hoje.
                 </div>
+            </div>
+        <?php endif; ?>
+        
+        <?php if (isset($_GET['msg']) && $_GET['msg'] == 'Obrigado'): ?>
+            <div class="alert alert-success" style="margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;">
+                <i class="fas fa-check"></i> Resposta registrada com sucesso!
             </div>
         <?php endif; ?>
 
@@ -290,6 +333,58 @@ foreach($activeCourses as $ac) {
             </div>
         </div>
 
+        <?php if (count($pendingTerms) > 0 || count($pendingEvents) > 0): ?>
+            <div class="urgent-notifications">
+                
+                <?php if (count($pendingTerms) > 0): ?>
+                    <div class="pending-terms-box">
+                        <div class="terms-header">
+                            <i class="fas fa-file-contract fa-lg"></i>
+                            <h3 style="margin:0; font-size:1.1rem;">Termos de Uso Pendentes</h3>
+                        </div>
+                        
+                        <p style="color: #856404; font-size: 0.95rem; margin-bottom: 20px; line-height: 1.5; flex-grow: 1;">
+                            Identificamos que você possui <strong><?php echo count($pendingTerms); ?></strong> curso(s) sem a confirmação de leitura dos termos de uso e imagem.
+                            <br><small style="opacity: 0.8;">(Ao clicar abaixo, você declara que leu e aceita os termos vigentes).</small>
+                        </p>
+
+                        <form method="POST">
+                            <input type="hidden" name="action" value="sign_all_pending">
+                            <button type="submit" class="btn-sign-all" style="width: 100%;">
+                                <i class="fas fa-pen-fancy"></i> Li e Concordo - Assinar Tudo
+                            </button>
+                        </form>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (count($pendingEvents) > 0): ?>
+                    <div class="pending-events-box">
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px;">
+                            <i class="fas fa-bullhorn fa-lg"></i>
+                            <h3 style="margin:0; font-size:1.1rem;">Novos Compromissos</h3>
+                        </div>
+                        <p style="font-size:0.95rem; margin-bottom:15px; color:#0c5460;">
+                            Sua participação é importante! Responda aos termos abaixo:
+                        </p>
+                        
+                        <div style="flex-grow: 1;">
+                            <?php foreach($pendingEvents as $evt): ?>
+                                <div class="event-item">
+                                    <div style="min-width: 0;">
+                                        <strong style="display:block; color:#0c5460; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($evt['title']); ?></strong>
+                                        <small style="color:#555;"><?php echo htmlspecialchars($evt['course_name']); ?></small>
+                                    </div>
+                                    <button class="btn-pix" style="background:#17a2b8; font-size:0.85rem; padding:8px 12px; white-space: nowrap;" onclick='abrirEvento(<?php echo json_encode($evt); ?>)'>
+                                        Ver e Assinar
+                                    </button>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+            </div>
+        <?php endif; ?>
         <div class="section-header">
             <h3 class="section-title"><i class="fas fa-chalkboard-teacher"></i> Meus Cursos</h3>
             <a href="my_courses.php" class="view-all-link">Ver todos &rarr;</a>
@@ -367,29 +462,6 @@ foreach($activeCourses as $ac) {
                         <p style="font-size:0.9rem; margin:0;">Tudo em dia!</p>
                     </div>
                 <?php endif; ?>
-
-                <?php if (count($pendingTerms) > 0): ?>
-                    <div class="pending-terms-box" style="background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 8px; padding: 20px; margin-top: 25px;">
-                        
-                        <div class="terms-header" style="display:flex; align-items:center; gap:10px; color:#856404; margin-bottom:15px;">
-                            <i class="fas fa-file-contract fa-lg"></i>
-                            <h3 style="margin:0; font-size:1.1rem;">Termos de Uso Pendentes</h3>
-                        </div>
-                        
-                        <p style="color: #856404; font-size: 0.95rem; margin-bottom: 20px; line-height: 1.5;">
-                            Identificamos que você possui <strong><?php echo count($pendingTerms); ?></strong> curso(s) sem a confirmação de leitura dos termos de uso.
-                            <br><small>(Ao clicar abaixo, você declara que leu e aceita os termos vigentes).</small>
-                        </p>
-
-                        <form method="POST">
-                            <input type="hidden" name="action" value="sign_all_pending">
-                            <button type="submit" class="btn-sign-all" style="width: 100%; justify-content: center;">
-                                <i class="fas fa-pen-fancy"></i> Li e Concordo - Assinar Tudo
-                            </button>
-                        </form>
-
-                    </div>
-                <?php endif; ?>
             </div>
 
             <div>
@@ -429,42 +501,55 @@ foreach($activeCourses as $ac) {
     </div> 
 </div>
 
-<div id="pixModal">
-    <div class="card-box" style="max-width:400px; width:95%; text-align:center; border-top: 5px solid #32bcad;">
-        <h3 style="margin-top:0; color:#2c3e50;">Pagamento via PIX</h3>
-        
-        <div id="pixLoading">
-            <div class="spinner"></div>
-            <p>Gerando QR Code...</p>
-        </div>
-
-        <div id="pixContent" style="display:none;">
-            <p style="color:#7f8c8d; margin-bottom:15px;">Escaneie o código abaixo para pagar</p>
+<div id="pixModal" class="modal-overlay">
+    <div class="modal-card-custom" style="max-width:400px; text-align:center; border-top: 5px solid #32bcad;">
+        <div style="padding:20px;">
+            <h3 style="margin-top:0; color:#2c3e50;">Pagamento via PIX</h3>
             
-            <div class="qr-container">
-                <img src="" id="pixQrImage" style="width:200px; height:200px; display:block;" alt="QR Code PIX">
+            <div id="pixLoading">
+                <div class="spinner"></div>
+                <p>Gerando QR Code...</p>
             </div>
 
-            <p style="font-size:1.1rem; font-weight:bold; color:#333; margin:5px 0;">Valor: <span id="pixVal" style="color:#27ae60;"></span></p>
-            
-            <div style="background:#f4f6f9; padding:12px; border-radius:8px; margin:15px 0; border:1px dashed #ccc;">
-                <small style="color:#666; display:block; margin-bottom:5px; font-weight:bold; text-transform:uppercase;">
-                    Copia e Cola:
-                </small>
-                
-                <textarea id="pixKeyText" readonly style="width:100%; height:70px; font-size:0.8rem; border:1px solid #ddd; border-radius:4px; padding:5px; resize:none;"></textarea>
-                
-                <button onclick="copyPixKey()" style="display:block; margin:8px auto 0; background:none; border:none; color:var(--primary-color); cursor:pointer; font-size:0.8rem; font-weight:bold;">
-                    <i class="far fa-copy"></i> Copiar Código
-                </button>
+            <div id="pixContent" style="display:none;">
+                <p style="color:#7f8c8d; margin-bottom:15px;">Escaneie o código abaixo para pagar</p>
+                <div class="qr-container">
+                    <img src="" id="pixQrImage" style="width:200px; height:200px; display:block;" alt="QR Code PIX">
+                </div>
+                <p style="font-size:1.1rem; font-weight:bold; color:#333; margin:5px 0;">Valor: <span id="pixVal" style="color:#27ae60;"></span></p>
+                <div style="background:#f4f6f9; padding:12px; border-radius:8px; margin:15px 0; border:1px dashed #ccc;">
+                    <small style="color:#666; display:block; margin-bottom:5px; font-weight:bold; text-transform:uppercase;">Copia e Cola:</small>
+                    <textarea id="pixKeyText" readonly style="width:100%; height:70px; font-size:0.8rem; border:1px solid #ddd; border-radius:4px; padding:5px; resize:none;"></textarea>
+                    <button onclick="copyPixKey()" style="display:block; margin:8px auto 0; background:none; border:none; color:var(--primary-color); cursor:pointer; font-size:0.8rem; font-weight:bold;"><i class="far fa-copy"></i> Copiar Código</button>
+                </div>
             </div>
+            
+            <button class="btn-access-sm" onclick="closePix()" style="width:100%; margin-top:10px; cursor:pointer;">Fechar Janela</button>
         </div>
-        
-        <button class="btn-primary" onclick="closePix()" style="width:100%; margin-top:10px;">Fechar Janela</button>
+    </div>
+</div>
+
+<div id="eventModal" class="modal-overlay">
+    <div class="modal-card-custom" style="max-width:600px;">
+        <form action="actions/respond_term.php" method="POST" style="display:flex; flex-direction:column; height:100%;">
+            <input type="hidden" name="term_id" id="evtId">
+            <div class="modal-header">
+                <span id="evtTitle">Termo de Compromisso</span>
+                <span style="cursor:pointer;" onclick="closeEvento()">&times;</span>
+            </div>
+            <div class="modal-body" style="background:#f9f9f9;">
+                <div id="evtContent" style="white-space: pre-wrap; font-family:sans-serif; line-height:1.6; color:#333;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" name="response" value="declined" style="background:white; color:#dc3545; border:1px solid #dc3545; padding:10px 20px; border-radius:4px; cursor:pointer;">Recusar / Não participarei</button>
+                <button type="submit" name="response" value="accepted" style="background:#28a745; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer; font-weight:bold;">Li e Concordo (Aceitar)</button>
+            </div>
+        </form>
     </div>
 </div>
 
 <script>
+// --- FUNÇÕES PIX ---
 function abrirPix(paymentId, val) {
     document.getElementById('pixModal').style.display = 'flex';
     document.getElementById('pixLoading').style.display = 'block';
@@ -475,7 +560,6 @@ function abrirPix(paymentId, val) {
         .then(response => response.json())
         .then(data => {
             document.getElementById('pixLoading').style.display = 'none';
-            
             if (data.success) {
                 document.getElementById('pixContent').style.display = 'block';
                 document.getElementById('pixQrImage').src = 'data:image/png;base64,' + data.qr_image_base64;
@@ -491,14 +575,26 @@ function abrirPix(paymentId, val) {
             closePix();
         });
 }
-
 function closePix() { document.getElementById('pixModal').style.display = 'none'; }
-
 function copyPixKey() {
     const keyText = document.getElementById('pixKeyText');
-    keyText.select();
-    keyText.setSelectionRange(0, 99999); 
+    keyText.select(); keyText.setSelectionRange(0, 99999); 
     navigator.clipboard.writeText(keyText.value).then(() => { alert("Código copiado!"); });
+}
+
+// --- FUNÇÕES EVENTO ---
+function abrirEvento(evt) {
+    document.getElementById('evtId').value = evt.id;
+    document.getElementById('evtTitle').innerText = evt.title;
+    document.getElementById('evtContent').innerText = evt.content; // Use innerHTML se permitir HTML no admin
+    document.getElementById('eventModal').style.display = 'flex';
+}
+function closeEvento() { document.getElementById('eventModal').style.display = 'none'; }
+
+// Fecha modal ao clicar fora
+window.onclick = function(e) {
+    if (e.target == document.getElementById('pixModal')) closePix();
+    if (e.target == document.getElementById('eventModal')) closeEvento();
 }
 </script>
 
