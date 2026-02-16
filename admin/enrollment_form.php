@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cert_action'])) {
     } catch (Exception $e) { $error = "Erro certificado: " . $e->getMessage(); }
 }
 
-// B: AÇÕES DE PAGAMENTO
+// B: AÇÕES DE PAGAMENTO (MANUAL)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_action'])) {
     $p_sid = (int)$_POST['studentId'];
     $p_cid = (int)$_POST['courseId'];
@@ -68,14 +68,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['payment_action'])) {
             $idsArray = array_map('intval', explode(',', $idsRaw));
             $inQuery = implode(',', $idsArray);
             
+            // BAIXA MANUAL
             if ($action === 'bulk_pay') {
                 $sql = "UPDATE payments SET status = 'Pago', paymentDate = NOW() WHERE id IN ($inQuery) AND studentId = :sid AND courseId = :cid";
                 $msg = 'payments_updated';
             } 
+            // REVERTER PARA PENDENTE
             elseif ($action === 'revert_pay') {
                 $sql = "UPDATE payments SET status = 'Pendente', paymentDate = NULL WHERE id IN ($inQuery) AND studentId = :sid AND courseId = :cid";
                 $msg = 'payments_reverted';
             }
+            // CANCELAR PAGAMENTO ESPECÍFICO (Mantém no histórico como 'Cancelado')
+            elseif ($action === 'cancel_pay') {
+                // OBS: Usando 'Cancelado' com 'o' conforme sua imagem do banco
+                $sql = "UPDATE payments SET status = 'Cancelado', paymentDate = NULL WHERE id IN ($inQuery) AND studentId = :sid AND courseId = :cid";
+                $msg = 'payments_updated';
+            }
+            
             if (isset($sql)) {
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute([':sid' => $p_sid, ':cid' => $p_cid]);
@@ -92,7 +101,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $r_sid = (int)$_POST['studentId'];
     $r_cid = (int)$_POST['courseId'];
     
-    // Deleta a resposta para que o termo apareça novamente para o aluno
     $stmtDel = $pdo->prepare("DELETE FROM event_term_responses WHERE term_id = ? AND studentId = ?");
     $stmtDel->execute([$termId, $r_sid]);
     
@@ -100,20 +108,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// D: PROCESSAMENTO DA MATRÍCULA (PRINCIPAL)
+// D: PROCESSAMENTO DA MATRÍCULA
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !isset($_POST['payment_action']) && !isset($_POST['action'])) {
     $sid = (int)$_POST['studentId'];
     $cid = (int)$_POST['courseId'];
     $status = $_POST['status'];
     
-    // Tratamento universal de Float
     $scholarship = isset($_POST['scholarshipPercentage']) ? (float)str_replace(',', '.', $_POST['scholarshipPercentage']) : 0.0;
     $inputFee = isset($_POST['customMonthlyFee']) ? (float)str_replace(',', '.', $_POST['customMonthlyFee']) : 0.0;
     
     $dueDay = !empty($_POST['customDueDay']) ? (int)$_POST['customDueDay'] : 10;
     $startDay = !empty($_POST['billingStartDate']) ? $_POST['billingStartDate'] : date('Y-m-d');
     
-    // Busca valor base
     $stmtC = $pdo->prepare("SELECT monthlyFee FROM courses WHERE id = :id");
     $stmtC->execute([':id' => $cid]);
     $courseData = $stmtC->fetch();
@@ -151,6 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['cert_action']) && !i
             $msgType = 'created';
         }
 
+        // LÓGICA DE CANCELAMENTO (Chama função externa)
         if ($status === 'Cancelada') {
             cancelarMatricula($pdo, $sid, $cid, $finalFee);
         }
@@ -202,7 +209,7 @@ if ($isEdit) {
     $stmtCert->execute([':s'=>$studentId, ':c'=>$courseId]);
     $certificates = $stmtCert->fetchAll(PDO::FETCH_ASSOC);
     
-    // BUSCA TERMOS DE EVENTOS/COMPROMISSO DO ALUNO
+    // BUSCA TERMOS
     $stmtEvt = $pdo->prepare("
         SELECT t.id, t.title, t.created_at, r.status as response_status, r.responded_at
         FROM event_terms t
@@ -492,6 +499,7 @@ checkRole(['admin', 'superadmin']);
                 <div class="btn-action-group">
                     <button type="button" class="btn-pay" onclick="openPayModal('pay')">Baixar</button>
                     <button type="button" class="btn-revert" onclick="openPayModal('revert')">Reverter</button>
+                    <button type="button" class="btn-cancel-pay" onclick="openPayModal('cancel')">Cancelar</button>
                 </div>
             </div>
             <div class="table-responsive">
@@ -501,7 +509,15 @@ checkRole(['admin', 'superadmin']);
                         <?php if (!empty($paymentHistory)): ?>
                             <?php foreach ($paymentHistory as $pay): 
                                 $statusClass = ''; 
-                                switch($pay['status']) { case 'Pago': $statusClass = 'badge-success'; break; case 'Cancelada': $statusClass = 'badge-secondary'; break; case 'Pendente': $statusClass = 'badge-warning'; break; }
+                                // Ajuste para status conforme imagem do banco
+                                switch($pay['status']) { 
+                                    case 'Pago': $statusClass = 'badge-success'; break; 
+                                    case 'Cancelado': // Usando 'Cancelado' com 'o'
+                                    case 'Cancelada': // Mantendo compatibilidade
+                                        $statusClass = 'badge-secondary'; break; 
+                                    case 'Pendente': $statusClass = 'badge-warning'; break; 
+                                    case 'Atrasado': $statusClass = 'badge-danger'; break; 
+                                }
                             ?>
                             <tr class="<?php echo $pay['status'] == 'Pago' ? 'row-paid' : 'row-pending'; ?>">
                                 <td><input type="checkbox" class="pay-checkbox" value="<?php echo $pay['id']; ?>"></td>
@@ -713,16 +729,31 @@ checkRole(['admin', 'superadmin']);
         btnPayConfirm.classList.remove('active');
         btnPayConfirm.classList.remove('active-danger');
 
+        // Ícones e cores padrão
+        document.getElementById('payModalIcon').className = "fas fa-money-bill-wave";
+        document.getElementById('payModalIconWrapper').style.background = "#e3f2fd";
+        document.getElementById('payModalIcon').style.color = "#3498db";
+
         if (action === 'pay') {
             document.getElementById('payModalTitle').innerText = "Baixar Pagamentos?";
             document.getElementById('payModalText').innerText = "Confirmar baixa dos pagamentos selecionados?";
             btnPayConfirm.innerText = "Confirmar Baixa";
             paymentActionInput.value = 'bulk_pay';
-        } else {
+        } 
+        else if (action === 'revert') {
             document.getElementById('payModalTitle').innerText = "Reverter?";
             document.getElementById('payModalText').innerText = "Reverter para pendente?";
             btnPayConfirm.innerText = "Reverter";
             paymentActionInput.value = 'revert_pay';
+        }
+        else if (action === 'cancel') {
+            document.getElementById('payModalTitle').innerText = "Cancelar Cobrança?";
+            document.getElementById('payModalText').innerHTML = "Tem certeza? Isso anulará a cobrança selecionada.<br><small>(Muda status para Cancelado)</small>";
+            document.getElementById('payModalIcon').className = "fas fa-ban";
+            document.getElementById('payModalIconWrapper').style.background = "#fdedec";
+            document.getElementById('payModalIcon').style.color = "#c0392b";
+            btnPayConfirm.innerText = "Cancelar";
+            paymentActionInput.value = 'cancel_pay';
         }
         document.getElementById('payModal').style.display = 'flex';
     }
@@ -730,8 +761,12 @@ checkRole(['admin', 'superadmin']);
     checkPayConfirm.addEventListener('change', function() {
         btnPayConfirm.disabled = !this.checked;
         if(this.checked) {
-            if(paymentActionInput.value === 'revert_pay') btnPayConfirm.classList.add('active-danger');
-            else btnPayConfirm.classList.add('active');
+            // Se for reverter ou cancelar, botão fica vermelho
+            if(paymentActionInput.value === 'revert_pay' || paymentActionInput.value === 'cancel_pay') {
+                btnPayConfirm.classList.add('active-danger');
+            } else {
+                btnPayConfirm.classList.add('active');
+            }
         } else {
             btnPayConfirm.classList.remove('active');
             btnPayConfirm.classList.remove('active-danger');
@@ -827,6 +862,8 @@ checkRole(['admin', 'superadmin']);
     .btn-doc { padding: 6px 12px; background: #3498db; color: white; border-radius: 4px; text-decoration: none; font-size: 0.85rem; }
     .btn-pay { background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
     .btn-revert { background: #fff; color: #e67e22; border: 1px solid #e67e22; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    .btn-cancel-pay { background: #fff; color: #c0392b; border: 1px solid #c0392b; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    .btn-cancel-pay:hover { background: #c0392b; color: white; }
     .btn-issue { background: #f39c12; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; display:flex; align-items:center; gap:5px;}
     .btn-revoke { background: white; color: #c0392b; border: 1px solid #c0392b; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
     .btn-action-group { display: flex; gap: 8px; }
@@ -836,7 +873,7 @@ checkRole(['admin', 'superadmin']);
     .row-paid { background: #fafffc; }
     .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; color: white; }
     .badge-success { background: #d1e7dd; color: #0f5132; } .badge-warning { background: #fff3cd; color: #664d03; } .badge-danger { background: #f8d7da; color: #842029; } .badge-secondary { background: #e2e3e5; color: #41464b; }
-    .active-danger { background: #e74c3c !important; border-color: #e74c3c !important; }
+    .active-danger { background: #c0392b !important; border-color: #c0392b !important; }
     .active { background: #27ae60 !important; }
     
     /* TOAST */
