@@ -322,7 +322,7 @@ $dataCourses = array_values($chartCourses);
                 </div>
                 <div id="bulkActions" class="bulk-bar">
                     <span><b id="selectedCount">0</b> selecionados</span>
-                    <button type="submit" class="btn-bulk" onclick="return confirm('Confirmar baixa?')">
+                    <button type="button" class="btn-bulk" onclick="baixaEmMassa()">
                         <i class="fas fa-check-double"></i> Baixar Selecionados
                     </button>
                 </div>
@@ -358,6 +358,36 @@ $dataCourses = array_values($chartCourses);
     </div>
 </div>
 
+<div id="confirmModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content-custom">
+        <div class="modal-icon-wrapper">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <h3>Confirmar Baixa</h3>
+        <p id="modalMsgText">Deseja realmente marcar este pagamento como <strong>PAGO</strong>?</p>
+        <div class="modal-actions-custom">
+            <button type="button" class="btn-modal-cancel" onclick="closeModal()">Cancelar</button>
+            <button type="button" class="btn-modal-confirm" onclick="confirmPayment()">Confirmar</button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Estilos Específicos do Modal */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+.modal-content-custom { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: fadeIn 0.3s ease; }
+.modal-icon-wrapper { width: 60px; height: 60px; background: #e8f5e9; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px auto; }
+.modal-icon-wrapper i { font-size: 30px; color: #27ae60; }
+.modal-content-custom h3 { margin: 0 0 10px 0; color: #333; }
+.modal-content-custom p { color: #666; margin-bottom: 25px; line-height: 1.5; }
+.modal-actions-custom { display: flex; justify-content: center; gap: 15px; }
+.btn-modal-cancel { background: #f1f2f6; color: #555; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+.btn-modal-cancel:hover { background: #e1e2e6; }
+.btn-modal-confirm { background: #27ae60; color: white; border: none; padding: 10px 25px; border-radius: 6px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 6px rgba(39, 174, 96, 0.2); transition: 0.2s; }
+.btn-modal-confirm:hover { background: #219150; transform: translateY(-1px); }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+
 <script>
     function openTab(evt, tabName) {
         var i, tabcontent, tablinks;
@@ -377,17 +407,60 @@ $dataCourses = array_values($chartCourses);
     const countSpan = document.getElementById('selectedCount');
     if(selectAll) selectAll.addEventListener('change', function() { checkboxes.forEach(cb => cb.checked = this.checked); updateBulkBar(); });
     if(checkboxes) checkboxes.forEach(cb => cb.addEventListener('change', updateBulkBar));
+    
     function updateBulkBar() {
         const checked = document.querySelectorAll('.pay-check:checked');
         if(countSpan) countSpan.innerText = checked.length;
         if(bulkBar) checked.length > 0 ? bulkBar.classList.add('visible') : bulkBar.classList.remove('visible');
     }
+
+    // --- NOVA LÓGICA DO MODAL ---
+    let paymentIdToConfirm = null; // Armazena o ID (ou 'BULK' para massa)
+
+    // Ação do Botão Individual
     function baixaIndividual(id) {
-        if(confirm('Confirmar o pagamento?')) {
+        paymentIdToConfirm = id;
+        document.getElementById('modalMsgText').innerHTML = "Deseja realmente marcar este pagamento como <strong>PAGO</strong>?";
+        document.getElementById('confirmModal').style.display = 'flex';
+    }
+
+    // Ação do Botão em Massa
+    function baixaEmMassa() {
+        const checked = document.querySelectorAll('.pay-check:checked');
+        if (checked.length === 0) { 
+            alert("Selecione pelo menos um item."); 
+            return; 
+        }
+        paymentIdToConfirm = 'BULK';
+        document.getElementById('modalMsgText').innerHTML = `Deseja marcar <strong>${checked.length} pagamentos</strong> selecionados como <strong>PAGOS</strong>?`;
+        document.getElementById('confirmModal').style.display = 'flex';
+    }
+
+    // Botão Cancelar do Modal
+    function closeModal() {
+        document.getElementById('confirmModal').style.display = 'none';
+        paymentIdToConfirm = null;
+    }
+
+    // Botão Confirmar do Modal
+    function confirmPayment() {
+        if (paymentIdToConfirm === 'BULK') {
+            // Envia o formulário principal
+            document.getElementById('bulkForm').submit();
+        } else if (paymentIdToConfirm) {
+            // Cria um form temporário para enviar o ID individual
             let form = document.createElement('form'); form.method = 'POST';
             let inputAction = document.createElement('input'); inputAction.type = 'hidden'; inputAction.name = 'action'; inputAction.value = 'bulk_pay';
-            let inputId = document.createElement('input'); inputId.type = 'hidden'; inputId.name = 'payment_ids[]'; inputId.value = id;
+            let inputId = document.createElement('input'); inputId.type = 'hidden'; inputId.name = 'payment_ids[]'; inputId.value = paymentIdToConfirm;
             form.appendChild(inputAction); form.appendChild(inputId); document.body.appendChild(form); form.submit();
+        }
+    }
+
+    // Fecha o modal se clicar fora
+    window.onclick = function(event) {
+        let modal = document.getElementById('confirmModal');
+        if (event.target == modal) {
+            closeModal();
         }
     }
 
