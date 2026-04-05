@@ -112,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $pdo->beginTransaction(); 
 
             if ($id) {
-                // UPDATE (Incluindo schedule_json)
+                // UPDATE (Sem as colunas antigas)
                 $sql = "UPDATE courses SET 
                         name = :name, 
                         description = :desc, 
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         totalSlots = :slots,
                         status = :status,
                         carga_horaria = :carga,
-                        schedule_json = :sched"; // Novo campo
+                        schedule_json = :sched";
                 
                 if (isset($_FILES['thumb']) && $_FILES['thumb']['error'] == 0) {
                     $sql .= ", thumbnail = :thumb";
@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->bindValue(':slots', $totalSlots);
                 $stmt->bindValue(':status', $status);
                 $stmt->bindValue(':carga', $carga_horaria);
-                $stmt->bindValue(':sched', $jsonSchedule); // Bind do JSON
+                $stmt->bindValue(':sched', $jsonSchedule);
                 $stmt->bindValue(':id', $id);
                 
                 if (isset($_FILES['thumb']) && $_FILES['thumb']['error'] == 0) {
@@ -143,10 +143,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
                 $stmt->execute();
 
+                // Limpa professores antigos para reinserir
                 $pdo->prepare("DELETE FROM course_teachers WHERE courseId = ?")->execute([$id]);
 
             } else {
-                // INSERT (Incluindo schedule_json)
+                // INSERT (Sem as colunas antigas)
                 $sql = "INSERT INTO courses (name, description, monthlyFee, totalSlots, status, carga_horaria, thumbnail, schedule_json, created_at) 
                         VALUES (:name, :desc, :fee, :slots, :status, :carga, :thumb, :sched, NOW())";
                 
@@ -159,12 +160,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     ':status' => $status,
                     ':carga' => $carga_horaria,
                     ':thumb' => $thumbnail,
-                    ':sched' => $jsonSchedule // Salva o JSON
+                    ':sched' => $jsonSchedule
                 ]);
                 $id = $pdo->lastInsertId(); 
             }
 
-            // Salva Professores
+            // Salva Professores na tabela auxiliar
             if (!empty($postedTeachers)) {
                 $sqlTeacher = "INSERT INTO course_teachers (courseId, teacherId, commissionRate, createdAt) VALUES (:cid, :tid, :rate, NOW())";
                 $stmtTeacher = $pdo->prepare($sqlTeacher);
@@ -186,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $pdo->commit();
             $msg = '<div class="alert alert-success">Curso salvo com sucesso! <span class="alert-close" onclick="this.parentElement.remove();">&times;</span></div>';
             
-            // Recarrega dados
+            // Recarrega dados atualizados dos professores
             $stmtTeachers = $pdo->prepare("SELECT teacherId, commissionRate FROM course_teachers WHERE courseId = :id");
             $stmtTeachers->execute([':id' => $id]);
             $selectedTeachers = $stmtTeachers->fetchAll(PDO::FETCH_ASSOC);
@@ -301,7 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     .sched-col { flex: 1; min-width: 150px; }
     .btn-remove-sched { background: #e74c3c; color: white; border: none; padding: 0 15px; border-radius: 5px; cursor: pointer; height: 42px; display: flex; align-items: center; justify-content: center; }
 
-    /* NOVO: Estilo para as linhas de Professor (Empilhado) */
+    /* Estilo para as linhas de Professor (Empilhado) */
     .teacher-row-stacked {
         background: #fff;
         border: 1px solid #e0e0e0;
@@ -324,7 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         align-items: flex-end;
     }
     .btn-remove-teacher {
-        height: 42px; /* Mesma altura do input */
+        height: 42px; 
         width: 42px;
         min-width: 42px;
         border: 1px solid #e74c3c;
@@ -344,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </style>
 
 <script>
-    // --- LÓGICA DE PROFESSORES (Alterada para Layout Empilhado) ---
+    // --- LÓGICA DE PROFESSORES ---
     const availableTeachers = <?php echo json_encode($allTeachers); ?>;
     const existingTeachers = <?php echo json_encode($selectedTeachers); ?>;
 
@@ -361,7 +362,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             options += `<option value="${t.id}" ${selected}>${fullName}${roleLabel}</option>`;
         });
 
-        // HTML do Card Empilhado
         div.innerHTML = `
             <div style="width: 100%;">
                 <label>Professor</label>
