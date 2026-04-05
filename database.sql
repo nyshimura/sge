@@ -44,17 +44,14 @@ CREATE TABLE `certificates` (
 
 --
 -- Estrutura para tabela `courses`
+-- (Corrigida: Removido teacherId e colunas de horários antigas)
 --
 CREATE TABLE `courses` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
   `description` text NOT NULL,
-  `teacherId` int(11) NOT NULL,
   `totalSlots` int(11) DEFAULT NULL COMMENT 'NULL para ilimitado',
   `status` enum('Aberto','Encerrado') NOT NULL DEFAULT 'Aberto',
-  `dayOfWeek` varchar(50) DEFAULT NULL,
-  `startTime` time DEFAULT NULL,
-  `endTime` time DEFAULT NULL,
   `carga_horaria` varchar(50) DEFAULT NULL,
   `monthlyFee` decimal(10,2) NOT NULL DEFAULT 0.00,
   `paymentType` enum('recorrente','parcelado') NOT NULL DEFAULT 'recorrente',
@@ -78,7 +75,10 @@ CREATE TABLE `course_teachers` (
   `teacherId` int(11) NOT NULL,
   `commissionRate` decimal(5,2) DEFAULT 0.00,
   `createdAt` timestamp NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `courseId` (`courseId`),
+  KEY `teacherId` (`teacherId`),
+  CONSTRAINT `course_teachers_ibfk_1` FOREIGN KEY (`courseId`) REFERENCES `courses` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -98,6 +98,40 @@ CREATE TABLE `enrollments` (
   `contractAcceptedAt` datetime DEFAULT NULL,
   `customDueDay` int(2) DEFAULT NULL,
   PRIMARY KEY (`studentId`,`courseId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estrutura para tabela `event_terms` (NOVA)
+--
+CREATE TABLE `event_terms` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `courseId` int(11) NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `content` longtext NOT NULL,
+  `status` enum('active','concluded') NOT NULL DEFAULT 'active',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `courseId` (`courseId`),
+  CONSTRAINT `event_terms_ibfk_1` FOREIGN KEY (`courseId`) REFERENCES `courses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estrutura para tabela `event_term_responses` (NOVA)
+--
+CREATE TABLE `event_term_responses` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `term_id` int(11) NOT NULL,
+  `studentId` int(11) NOT NULL,
+  `status` enum('pending','accepted','declined') NOT NULL DEFAULT 'pending',
+  `responded_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `term_id` (`term_id`),
+  KEY `studentId` (`studentId`),
+  CONSTRAINT `event_resp_ibfk_1` FOREIGN KEY (`term_id`) REFERENCES `event_terms` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -151,7 +185,7 @@ INSERT INTO `school_profile` (`id`, `name`, `cnpj`, `state`, `schoolCity`, `addr
 -- --------------------------------------------------------
 
 --
--- Estrutura para tabela `system_settings` (Se existir no seu sistema, adicione aqui)
+-- Estrutura para tabela `system_settings`
 --
 CREATE TABLE IF NOT EXISTS `system_settings` (
   `id` int(11) NOT NULL DEFAULT 1,
@@ -237,21 +271,9 @@ CREATE TABLE `users` (
 --
 -- Dados Iniciais para `users` (Super Admin)
 -- Senha: admin
--- Hash gerado (BCrypt): $2y$10$8sA1N7b.5s2.J7j.8.1.5.u3.5.3.5.3.5.3.5.3.5.3.5.3.5 (Exemplo válido para 'admin' em muitos sistemas, ou use o gerado pelo seu PHP)
--- Vou usar o hash original do arquivo se for conhecido, caso contrário, insira um hash válido.
--- Hash abaixo é válido para a senha "admin" (custo 10)
+--
 INSERT INTO `users` (`id`, `firstName`, `lastName`, `email`, `password_hash`, `role`) VALUES
 (1, 'Super', 'Admin', 'admin@admin', '$2y$10$lPfrWc7ZIZQ12qSSNRJF1OmEEphBw3kebx0ELRYT8EER5Fk6ILDba', 'superadmin');
--- Nota: O hash acima é um placeholder. Se não funcionar, rode:
--- UPDATE users SET password_hash = '$2y$10$YourGeneratedHashHere' WHERE id=1;
--- Ou se o hash do arquivo original ($2y$10$KVnnG...) for "admin", mantenha-o. 
--- Para garantir, aqui está um hash gerado agora para "admin":
--- $2y$10$H8s.k1.2.3.4.5.6.7.8.9.0.1.2.3.4.5.6.7.8.9.0.1.2.3 (Fictício)
--- RECOMENDAÇÃO: Ao instalar, logue e mude a senha, ou use a função de "Esqueci a senha" se o e-mail estiver configurado.
--- Mas para "admin@admin" funcionar de cara, o hash precisa bater.
--- O hash exato para "admin" depende do "salt" aleatório. 
--- Vou deixar o comando abaixo para você rodar no PHP se precisar gerar um novo:
--- echo password_hash('admin', PASSWORD_DEFAULT);
 
 COMMIT;
 
