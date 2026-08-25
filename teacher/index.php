@@ -8,8 +8,8 @@ $teacherId = $_SESSION['user_id'];
 // --- 1. BUSCAR CURSOS (Titular OU Auxiliar) ---
 // Mesma lógica de antes: Distinct + Left Join + Ordenação por Horário
 $sqlCourses = "SELECT DISTINCT c.* FROM courses c
-               LEFT JOIN course_teachers ct ON c.id = ct.courseId
-               WHERE (c.teacherId = :tid OR ct.teacherId = :tid) 
+               INNER JOIN course_teachers ct ON c.id = ct.courseId
+               WHERE ct.teacherId = :tid 
                AND c.status = 'Aberto'";
 
 $stmt = $pdo->prepare($sqlCourses);

@@ -8,9 +8,9 @@ $courseId = isset($_GET['cid']) ? (int)$_GET['cid'] : 0;
 
 // 1. SEGURANÇA E DADOS DO CURSO
 $sqlCheck = "SELECT DISTINCT c.* FROM courses c 
-             LEFT JOIN course_teachers ct ON c.id = ct.courseId
+             INNER JOIN course_teachers ct ON c.id = ct.courseId
              WHERE c.id = :cid 
-             AND (c.teacherId = :tid OR ct.teacherId = :tid)
+             AND ct.teacherId = :tid
              AND c.status = 'Aberto'";
 
 $stmt = $pdo->prepare($sqlCheck);

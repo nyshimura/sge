@@ -13,8 +13,8 @@ $dateParam = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
 if ($courseId === 0) {
     // Busca cursos onde o professor é Titular ou Auxiliar
     $sqlList = "SELECT DISTINCT c.* FROM courses c
-                LEFT JOIN course_teachers ct ON c.id = ct.courseId
-                WHERE (c.teacherId = :tid OR ct.teacherId = :tid) 
+                INNER JOIN course_teachers ct ON c.id = ct.courseId
+                WHERE ct.teacherId = :tid 
                 AND c.status = 'Aberto'";
                 
     $stmt = $pdo->prepare($sqlList);
@@ -94,9 +94,9 @@ if ($courseId === 0) {
 
 // Validação de Segurança
 $sqlCheck = "SELECT DISTINCT c.* FROM courses c 
-             LEFT JOIN course_teachers ct ON c.id = ct.courseId
+             INNER JOIN course_teachers ct ON c.id = ct.courseId
              WHERE c.id = :cid 
-             AND (c.teacherId = :tid OR ct.teacherId = :tid)
+             AND ct.teacherId = :tid
              AND c.status = 'Aberto'";
 
 $stmt = $pdo->prepare($sqlCheck);
