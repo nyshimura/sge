@@ -36,7 +36,8 @@ try {
             FROM certificates cert
             INNER JOIN users u ON cert.student_id = u.id
             INNER JOIN courses c ON cert.course_id = c.id
-            LEFT JOIN users prof ON c.teacherId = prof.id
+            LEFT JOIN course_teachers ct ON c.id = ct.courseId
+            LEFT JOIN users prof ON ct.teacherId = prof.id
             CROSS JOIN school_profile s
             CROSS JOIN system_settings st
             WHERE cert.verification_hash = :hash AND s.id = 1 AND st.id = 1
