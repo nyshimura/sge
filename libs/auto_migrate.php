@@ -120,7 +120,26 @@ function getMigrations() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
         ],
         // 4. Garante a coluna STATUS na tabela de eventos (caso a tabela já existisse sem ela)
-        ['type'=>'col', 't'=>'event_terms', 'c'=>'status', 'sql'=>"ALTER TABLE `event_terms` ADD COLUMN `status` ENUM('active', 'concluded') NOT NULL DEFAULT 'active' AFTER `content`"]
+        ['type'=>'col', 't'=>'event_terms', 'c'=>'status', 'sql'=>"ALTER TABLE `event_terms` ADD COLUMN `status` ENUM('active', 'concluded') NOT NULL DEFAULT 'active' AFTER `content`"],
+        
+        // 5. Carteirinhas (ID Cards)
+        [
+            'type' => 'tbl',
+            't' => 'id_card_templates',
+            'sql' => "CREATE TABLE IF NOT EXISTS `id_card_templates` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `name` varchar(150) NOT NULL,
+                `background_image` longtext DEFAULT NULL,
+                `template_text` text DEFAULT NULL,
+                `orientation` char(1) NOT NULL DEFAULT 'L',
+                `created_at` timestamp NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (`id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+        ],
+        ['type'=>'col', 't'=>'id_card_templates', 'c'=>'orientation', 'sql'=>"ALTER TABLE `id_card_templates` ADD COLUMN `orientation` char(1) NOT NULL DEFAULT 'L'"],
+        ['type'=>'col', 't'=>'courses', 'c'=>'id_card_template_id', 'sql'=>"ALTER TABLE `courses` ADD COLUMN `id_card_template_id` int(11) DEFAULT NULL"],
+        ['type'=>'col', 't'=>'system_settings', 'c'=>'teacher_id_card_template_id', 'sql'=>"ALTER TABLE `system_settings` ADD COLUMN `teacher_id_card_template_id` int(11) DEFAULT NULL"],
+        ['type'=>'col', 't'=>'users', 'c'=>'role_title', 'sql'=>"ALTER TABLE `users` ADD COLUMN `role_title` varchar(100) DEFAULT NULL"]
     ];
 }
 
