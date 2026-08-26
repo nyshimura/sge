@@ -55,20 +55,44 @@ function getLocalVersion() {
 
 function getRemoteVersion() {
     $url = "https://raw.githubusercontent.com/" . GITHUB_USER . "/" . GITHUB_REPO . "/" . GITHUB_BRANCH . "/package.json";
-    // Contexto para evitar cache e simular browser
-    $opts = [
-        'http' => [
-            'method' => 'GET',
-            'header' => [
-                'User-Agent: PHP-Updater',
-                'Cache-Control: no-cache'
-            ]
-        ]
-    ];
-    if (!empty(GITHUB_TOKEN)) $opts['http']['header'][] = "Authorization: token " . GITHUB_TOKEN;
     
-    $ctx = stream_context_create($opts);
-    $c = @file_get_contents($url, false, $ctx);
+    $headers = [
+        'User-Agent: PHP-Updater',
+        'Cache-Control: no-cache'
+    ];
+    if (!empty(GITHUB_TOKEN)) {
+        $headers[] = "Authorization: token " . GITHUB_TOKEN;
+    }
+
+    $c = false;
+    // Tenta usar cURL primeiro (melhor para servidores em produção onde allow_url_fopen pode estar desativado)
+    if (function_exists('curl_init')) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Evita erros de certificado em algumas hospedagens
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        $c = curl_exec($ch);
+        curl_close($ch);
+    } 
+    
+    // Se o cURL falhar ou não existir, usa file_get_contents como fallback
+    if (!$c) {
+        $opts = [
+            'http' => [
+                'method' => 'GET',
+                'header' => $headers
+            ],
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false
+            ]
+        ];
+        $ctx = stream_context_create($opts);
+        $c = @file_get_contents($url, false, $ctx);
+    }
+
     return $c ? (json_decode($c, true)['version'] ?? null) : null;
 }
 
