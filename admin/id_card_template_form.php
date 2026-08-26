@@ -299,10 +299,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <small style="color:#888; display:block; margin-top:10px;" id="canvasInfoText"><i class="fas fa-info-circle"></i> Escala: 1mm = 5px. Orientação: <?php echo $template['orientation'] == 'P' ? 'Retrato (Vertical)' : 'Paisagem (Horizontal)'; ?>.</small>
             </div>
             
-            <div class="properties-panel" id="propPanel" style="display: none;">
-                <h4 style="margin-top:0; color:#e74c3c; border-bottom: 1px solid #eee; padding-bottom:10px;" id="propTitle">Propriedades</h4>
-                
-                <div class="prop-group">
+            <div class="properties-panel" id="propPanel">
+                <h4 style="margin-top:0; color:#3498db; border-bottom: 1px solid #eee; padding-bottom:10px;">
+                    <i class="fas fa-layer-group"></i> Selecionar Elemento
+                </h4>
+                <div style="margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 5px;">
+                    <button type="button" class="btn-action" style="padding: 5px 10px; font-size:12px;" onclick="selectElement('name')">Nome</button>
+                    <button type="button" class="btn-action" style="padding: 5px 10px; font-size:12px;" onclick="selectElement('course')">Curso/Cargo</button>
+                    <button type="button" class="btn-action" style="padding: 5px 10px; font-size:12px;" onclick="selectElement('cpf')">CPF</button>
+                    <button type="button" class="btn-action" style="padding: 5px 10px; font-size:12px;" onclick="selectElement('photo')">Foto</button>
+                </div>
+
+                <div id="propFields" style="display: none;">
+                    <h4 style="margin-top:0; color:#e74c3c; border-bottom: 1px solid #eee; padding-bottom:10px;" id="propTitle">Propriedades</h4>
+                    
+                    <div class="prop-group">
                     <label class="toggle-visibility">
                         <input type="checkbox" id="propVisible">
                         Exibir na Carteirinha
@@ -351,6 +362,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <option value="circle">Círculo</option>
                     </select>
                 </div>
+                </div> <!-- /propFields -->
             </div>
         </div>
 
@@ -583,11 +595,14 @@ canvas.addEventListener('mousedown', function(e) {
 });
 
 function selectElement(key) {
-    deselectAll();
+    if (activeElement) {
+        elements[activeElement].classList.remove('selected');
+    }
     activeElement = key;
     elements[key].classList.add('selected');
     
-    propPanel.style.display = 'block';
+    // Mostra o painel principal de propriedades
+    document.getElementById('propFields').style.display = 'block';
     propTitle.innerHTML = "<i class='fas fa-sliders-h'></i> " + labels[key];
     
     let conf = config[key] || {};
@@ -611,7 +626,7 @@ function selectElement(key) {
 
 function deselectAll() {
     activeElement = null;
-    propPanel.style.display = 'none';
+    document.getElementById('propFields').style.display = 'none';
     for (let key in elements) {
         elements[key].classList.remove('selected');
     }

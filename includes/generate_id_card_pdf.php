@@ -93,7 +93,31 @@ if (!empty($data['profilePicture'])) {
 // Fallback para Iniciais (ui-avatars) se não houver foto
 if (!$profileTemp) {
     $avatarUrl = "https://ui-avatars.com/api/?name=" . urlencode($data['firstName']) . "&background=random&size=140&color=fff&format=png";
-    $avatarData = @file_get_contents($avatarUrl);
+    $avatarData = false;
+    
+    // Usa cURL para evitar bloqueios de hospedagens em produção (allow_url_fopen off)
+    if (function_exists('curl_init')) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $avatarUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'SGE-System');
+        $avatarData = curl_exec($ch);
+        curl_close($ch);
+    }
+    
+    // Fallback
+    if (!$avatarData) {
+        $opts = [
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false
+            ]
+        ];
+        $ctx = stream_context_create($opts);
+        $avatarData = @file_get_contents($avatarUrl, false, $ctx);
+    }
+
     if ($avatarData) {
         $profileTemp = sys_get_temp_dir() . '/prof_' . uniqid() . '.png';
         file_put_contents($profileTemp, $avatarData);
