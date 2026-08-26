@@ -154,9 +154,10 @@ $enrollments = $stmt->fetchAll();
                                 <?php if($rawStatus == 'Pendente' || $rawStatus == 'Cancelada'): ?>
                                     <button class="btn-action btn-edit" style="color:#27ae60; border-color:#27ae60;" onclick="openApproveModal(<?php echo $e['studentId']; ?>, <?php echo $e['courseId']; ?>, '<?php echo addslashes($e['firstName']); ?>')"><i class="fas fa-check"></i></button>
                                 <?php endif; ?>
-                                <a href="enrollment_form.php?sid=<?php echo $e['studentId']; ?>&cid=<?php echo $e['courseId']; ?>" class="btn-action btn-edit"><i class="fas fa-edit"></i></a>
+                                <a href="enrollment_form.php?sid=<?php echo $e['studentId']; ?>&cid=<?php echo $e['courseId']; ?>" class="btn-action btn-edit" title="Editar"><i class="fas fa-edit"></i></a>
                                 <?php if($rawStatus != 'Cancelada'): ?>
-                                <button class="btn-action btn-delete" onclick="openCancelModal(<?php echo $e['studentId']; ?>, <?php echo $e['courseId']; ?>, '<?php echo addslashes($e['firstName']); ?>', <?php echo $finalFee; ?>)"><i class="fas fa-trash"></i></button>
+                                <a href="../includes/generate_id_card_pdf.php?student_id=<?php echo $e['studentId']; ?>&course_id=<?php echo $e['courseId']; ?>" target="_blank" class="btn-action btn-edit" title="Emitir Carteirinha" style="color:#3498db; border-color:#3498db;"><i class="fas fa-id-badge"></i></a>
+                                <button class="btn-action btn-delete" title="Cancelar" onclick="openCancelModal(<?php echo $e['studentId']; ?>, <?php echo $e['courseId']; ?>, '<?php echo addslashes($e['firstName']); ?>', <?php echo $finalFee; ?>)"><i class="fas fa-trash"></i></button>
                                 <?php endif; ?>
                             </div>
                         </td>

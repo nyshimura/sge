@@ -13,6 +13,7 @@ $firstName = '';
 $lastName = '';
 $email = '';
 $role = 'student'; // Padrão
+$role_title = '';
 $phone = '';
 $cpf = '';
 $msg = '';
@@ -31,6 +32,7 @@ if ($id) {
     $lastName = $user['lastName'];
     $email = $user['email'];
     $role = $user['role'];
+    $role_title = $user['role_title'] ?? '';
     $phone = $user['phone'];
     $cpf = $user['cpf'];
 }
@@ -41,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $lastName = cleanInput($_POST['lastName']);
     $email = cleanInput($_POST['email']);
     $role = cleanInput($_POST['role']);
+    $role_title = cleanInput($_POST['role_title'] ?? '');
     $phone = cleanInput($_POST['phone']);
     $cpf = cleanInput($_POST['cpf']);
     $password = $_POST['password']; 
@@ -62,10 +65,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($id) {
                 // UPDATE
                 // Nota: Não atualizamos a imagem aqui para não sobrescrever uma foto personalizada que o usuário já tenha.
-                $sql = "UPDATE users SET firstName = :fn, lastName = :ln, email = :em, role = :rl, phone = :ph, cpf = :cpf WHERE id = :id";
+                $sql = "UPDATE users SET firstName = :fn, lastName = :ln, email = :em, role = :rl, role_title = :rt, phone = :ph, cpf = :cpf WHERE id = :id";
                 $params = [
                     ':fn' => $firstName, ':ln' => $lastName, ':em' => $email, 
-                    ':rl' => $role, ':ph' => $phone, ':cpf' => $cpf, ':id' => $id
+                    ':rl' => $role, ':rt' => $role_title, ':ph' => $phone, ':cpf' => $cpf, ':id' => $id
                 ];
                 
                 $stmt = $pdo->prepare($sql);
@@ -88,8 +91,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $hash = password_hash($password, PASSWORD_DEFAULT);
                     
                     // Adicionado campo 'profilePicture' na query
-                    $sql = "INSERT INTO users (firstName, lastName, email, password_hash, role, phone, cpf, profilePicture, created_at) 
-                            VALUES (:fn, :ln, :em, :pass, :rl, :ph, :cpf, :pic, NOW())";
+                    $sql = "INSERT INTO users (firstName, lastName, email, password_hash, role, role_title, phone, cpf, profilePicture, created_at) 
+                            VALUES (:fn, :ln, :em, :pass, :rl, :rt, :ph, :cpf, :pic, NOW())";
                     
                     $stmt = $pdo->prepare($sql);
                     $stmt->execute([
@@ -97,7 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         ':ln' => $lastName, 
                         ':em' => $email, 
                         ':pass' => $hash, 
-                        ':rl' => $role, 
+                        ':rl' => $role,
+                        ':rt' => $role_title,
                         ':ph' => $phone, 
                         ':cpf' => $cpf,
                         ':pic' => $base64Image // Salva na coluna profilePicture
@@ -140,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </div>
             <div class="form-group" style="flex: 1;">
                 <label>Perfil de Acesso</label>
-                <select name="role" class="form-control">
+                <select name="role" class="form-control" id="roleSelect">
                     <option value="student" <?php echo $role == 'student' ? 'selected' : ''; ?>>Aluno</option>
                     <option value="teacher" <?php echo $role == 'teacher' ? 'selected' : ''; ?>>Professor</option>
                     <option value="admin" <?php echo $role == 'admin' ? 'selected' : ''; ?>>Administrador</option>
@@ -148,6 +152,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </select>
             </div>
         </div>
+
+        <div style="display: flex; gap: 20px;" id="roleTitleRow">
+            <div class="form-group" style="flex: 1;">
+                <label>Cargo / Título Institucional</label>
+                <input type="text" name="role_title" class="form-control" value="<?php echo htmlspecialchars($role_title); ?>" placeholder="Ex: Professor de Dança, Diretor, etc.">
+                <small style="color:#777;">* Será impresso na carteirinha da equipe. Deixe vazio para usar o padrão.</small>
+            </div>
+        </div>
+        
+        <script>
+            function toggleRoleTitle() {
+                var role = document.getElementById('roleSelect').value;
+                document.getElementById('roleTitleRow').style.display = (role === 'student') ? 'none' : 'flex';
+            }
+            document.getElementById('roleSelect').addEventListener('change', toggleRoleTitle);
+            toggleRoleTitle(); // run on load
+        </script>
 
         <div style="display: flex; gap: 20px;">
             <div class="form-group" style="flex: 1;">

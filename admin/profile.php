@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $cpf = trim($_POST['cpf']);
     $address = trim($_POST['address']);
     $birthDate = $_POST['birthDate'];
+    $role_title = trim($_POST['role_title'] ?? '');
     
     // Calcula Idade
     $age = 0;
@@ -60,13 +61,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // Query Dinâmica
         $sql = "UPDATE users SET 
                 firstName = :fn, lastName = :ln, email = :em, phone = :ph, 
-                rg = :rg, cpf = :cpf, address = :addr, 
+                rg = :rg, cpf = :cpf, address = :addr, role_title = :rt,
                 birthDate = :bd, age = :age,
                 guardianName = :gn, guardianPhone = :gp, guardianEmail = :ge, guardianRG = :grg, guardianCPF = :gcpf";
         
         $params = [
             ':fn' => $firstName, ':ln' => $lastName, ':em' => $email, ':ph' => $phone,
-            ':rg' => $rg, ':cpf' => $cpf, ':addr' => $address,
+            ':rg' => $rg, ':cpf' => $cpf, ':addr' => $address, ':rt' => $role_title,
             ':bd' => $birthDate, ':age' => $age,
             ':gn' => $guardianName, ':gp' => $guardianPhone, ':ge' => $guardianEmail, ':grg' => $guardianRG, ':gcpf' => $guardianCPF,
             ':uid' => $userId
@@ -212,14 +213,43 @@ if ($role == 'admin' || $role == 'superadmin') {
         }
         .btn-save-profile:hover { background-color: #219150; }
         
+        .btn-id-card {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);
+            border: none;
+        }
+        .btn-id-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(52, 152, 219, 0.4);
+            color: #fff;
+        }
+
         /* Alertas */
         .alert { padding: 15px; border-radius: 6px; margin-bottom: 20px; }
         .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .alert-danger { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     </style>
 
-    <div style="margin-bottom: 25px;">
+    <div style="margin-bottom: 25px; display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0; color:#2c3e50; font-size: 1.5rem;">Editar Meu Perfil</h2>
+        <?php
+        $sysSet = $pdo->query("SELECT teacher_id_card_template_id FROM system_settings WHERE id = 1")->fetch();
+        if (!empty($sysSet['teacher_id_card_template_id'])):
+        ?>
+        <a href="../includes/generate_id_card_pdf.php?teacher_id=<?php echo $userId; ?>" target="_blank" class="btn-id-card">
+            <i class="fas fa-id-card-alt"></i> Gerar Carteirinha
+        </a>
+        <?php endif; ?>
     </div>
 
     <?php echo $msg; ?>
@@ -243,6 +273,10 @@ if ($role == 'admin' || $role == 'superadmin') {
             <h4 style="border-bottom: 2px solid #f1f2f6; padding-bottom: 15px; margin-bottom: 25px; color: #34495e; font-size: 1.2rem;">Dados Pessoais</h4>
             
             <div class="form-grid">
+                <div class="form-group span-2">
+                    <label>Cargo Institucional (Impresso na Carteirinha)</label>
+                    <input type="text" name="role_title" class="form-control-profile" value="<?php echo htmlspecialchars($user['role_title'] ?? ''); ?>" placeholder="Ex: Diretor(a), Técnico, Coordenador(a)">
+                </div>
                 <div class="form-group"><label>Nome</label><input type="text" name="firstName" class="form-control-profile" value="<?php echo htmlspecialchars($user['firstName']); ?>" required></div>
                 <div class="form-group"><label>Sobrenome</label><input type="text" name="lastName" class="form-control-profile" value="<?php echo htmlspecialchars($user['lastName']); ?>" required></div>
                 <div class="form-group"><label>E-mail</label><input type="email" name="email" class="form-control-profile" value="<?php echo htmlspecialchars($user['email']); ?>" required></div>

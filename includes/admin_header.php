@@ -50,6 +50,10 @@ if (strpos($userPic, 'data:image') === false && !file_exists($userPic)) {
             </h2>
             
             <div class="user-info" style="display:flex; align-items:center;">
+                <a href="../switch_role.php?role=student" style="background: #3498db; color: #fff; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 0.8rem; font-weight: bold; margin-right: 15px;">
+                    <i class="fas fa-user-graduate"></i> Acessar como Aluno
+                </a>
+                
                 <a href="../admin/profile.php" class="user-profile-link" title="Meu Perfil">
                     <span class="header-user-name">
                         Olá, <strong><?php echo htmlspecialchars(explode(' ', $_SESSION['user_name'])[0]); // Mostra só o primeiro nome ?></strong>

@@ -21,6 +21,7 @@ $totalSlots = '';
 $status = 'Aberto';
 $thumbnail = '';
 $carga_horaria = '';
+$id_card_template_id = '';
 $selectedTeachers = []; 
 $schedules = []; // Array para horários
 $msg = '';
@@ -44,6 +45,7 @@ if ($id) {
     $status = $course['status'];
     $thumbnail = $course['thumbnail'];
     $carga_horaria = $course['carga_horaria'];
+    $id_card_template_id = $course['id_card_template_id'];
     
     // Decodifica horários existentes
     if (!empty($course['schedule_json'])) {
@@ -62,6 +64,13 @@ try {
     $allTeachers = [];
 }
 
+try {
+    $stmtTpl = $pdo->query("SELECT id, name FROM id_card_templates ORDER BY name ASC");
+    $idCardTemplates = $stmtTpl->fetchAll();
+} catch (Exception $e) {
+    $idCardTemplates = [];
+}
+
 // PROCESSAR POST
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $name = cleanInput($_POST['name']);
@@ -70,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $totalSlots = !empty($_POST['totalSlots']) ? (int)$_POST['totalSlots'] : null;
     $status = cleanInput($_POST['status']);
     $carga_horaria = cleanInput($_POST['carga_horaria']);
+    $id_card_template_id = !empty($_POST['id_card_template_id']) ? (int)$_POST['id_card_template_id'] : null;
     
     $postedTeachers = isset($_POST['teacher_ids']) ? $_POST['teacher_ids'] : [];
     $postedCommissions = isset($_POST['commissions']) ? $_POST['commissions'] : [];
@@ -120,7 +130,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         totalSlots = :slots,
                         status = :status,
                         carga_horaria = :carga,
-                        schedule_json = :sched";
+                        schedule_json = :sched,
+                        id_card_template_id = :id_card_template_id";
                 
                 if (isset($_FILES['thumb']) && $_FILES['thumb']['error'] == 0) {
                     $sql .= ", thumbnail = :thumb";
@@ -136,6 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->bindValue(':status', $status);
                 $stmt->bindValue(':carga', $carga_horaria);
                 $stmt->bindValue(':sched', $jsonSchedule);
+                $stmt->bindValue(':id_card_template_id', $id_card_template_id);
                 $stmt->bindValue(':id', $id);
                 
                 if (isset($_FILES['thumb']) && $_FILES['thumb']['error'] == 0) {
@@ -148,8 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             } else {
                 // INSERT (Sem as colunas antigas)
-                $sql = "INSERT INTO courses (name, description, monthlyFee, totalSlots, status, carga_horaria, thumbnail, schedule_json, created_at) 
-                        VALUES (:name, :desc, :fee, :slots, :status, :carga, :thumb, :sched, NOW())";
+                $sql = "INSERT INTO courses (name, description, monthlyFee, totalSlots, status, carga_horaria, thumbnail, schedule_json, id_card_template_id, created_at) 
+                        VALUES (:name, :desc, :fee, :slots, :status, :carga, :thumb, :sched, :id_card_template_id, NOW())";
                 
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute([
@@ -160,7 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     ':status' => $status,
                     ':carga' => $carga_horaria,
                     ':thumb' => $thumbnail,
-                    ':sched' => $jsonSchedule
+                    ':sched' => $jsonSchedule,
+                    ':id_card_template_id' => $id_card_template_id
                 ]);
                 $id = $pdo->lastInsertId(); 
             }
@@ -236,12 +249,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>Status</label>
-                    <select name="status" class="form-control">
-                        <option value="Aberto" <?php echo ($status == 'Aberto' || $status == 'active') ? 'selected' : ''; ?>>Aberto (Ativo)</option>
-                        <option value="Fechado" <?php echo ($status == 'Fechado' || $status == 'inactive') ? 'selected' : ''; ?>>Fechado (Inativo)</option>
-                    </select>
+                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Status</label>
+                        <select name="status" class="form-control">
+                            <option value="Aberto" <?php echo ($status == 'Aberto' || $status == 'active') ? 'selected' : ''; ?>>Aberto (Ativo)</option>
+                            <option value="Fechado" <?php echo ($status == 'Fechado' || $status == 'inactive') ? 'selected' : ''; ?>>Fechado (Inativo)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" style="flex: 1;">
+                        <label>Modelo de Carteirinha</label>
+                        <select name="id_card_template_id" class="form-control">
+                            <option value="">Nenhum (Não emite)</option>
+                            <?php foreach ($idCardTemplates as $tpl): ?>
+                                <option value="<?php echo $tpl['id']; ?>" <?php echo $id_card_template_id == $tpl['id'] ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($tpl['name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                 </div>
             </div>
 

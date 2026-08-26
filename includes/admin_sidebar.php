@@ -56,6 +56,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-graduation-cap"></i> <span>Cursos</span>
             </a>
         </li>
+        <li>
+            <a href="id_card_templates.php" class="<?php echo ($currentPage == 'id_card_templates.php' || $currentPage == 'id_card_template_form.php') ? 'active' : ''; ?>">
+                <i class="fas fa-id-card"></i> <span>Carteirinhas</span>
+            </a>
+        </li>
         
         <li>
             <a href="events_manager.php" class="<?php echo $currentPage == 'events_manager.php' ? 'active' : ''; ?>">

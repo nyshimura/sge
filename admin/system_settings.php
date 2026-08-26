@@ -165,6 +165,9 @@ if (!$settings) {
 
 $schoolProfile = $pdo->query("SELECT * FROM school_profile WHERE id = 1")->fetch();
 $recessList = $pdo->query("SELECT * FROM school_recess ORDER BY start_date DESC")->fetchAll();
+try {
+    $idCardTemplates = $pdo->query("SELECT id, name FROM id_card_templates ORDER BY name ASC")->fetchAll();
+} catch (Exception $e) { $idCardTemplates = []; }
 
 // Placeholders
 $placeholders = [
@@ -228,6 +231,7 @@ function renderToolbar($targetId) {
                         <label>Moeda</label>
                         <input type="text" name="currencySymbol" class="form-control" value="<?php echo htmlspecialchars($settings['currencySymbol']); ?>">
                     </div>
+
                 </div>
                 <div style="text-align: right;">
                     <button type="submit" class="btn-save btn-primary">Salvar Alterações</button>

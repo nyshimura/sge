@@ -47,6 +47,11 @@ if (strpos($userPic, 'data:image') === false && !file_exists($userPic)) {
             </h2>
             
             <div class="user-info">
+                <?php if (isset($_SESSION['real_role']) && $_SESSION['real_role'] !== 'student'): ?>
+                    <a href="../switch_role.php?role=<?php echo $_SESSION['real_role']; ?>" style="background: #e74c3c; color: #fff; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 0.8rem; font-weight: bold; margin-right: 15px;">
+                        <i class="fas fa-undo"></i> Voltar ao Painel Principal
+                    </a>
+                <?php endif; ?>
                 
                 <a href="../student/profile.php" class="user-profile-link" title="Meu Perfil">
                     <span class="header-user-name">

@@ -99,6 +99,9 @@ try {
                         </td>
                         <td>
                             <div class="actions-cell">
+                                <?php if (in_array($u['role'], ['teacher', 'admin', 'superadmin'])): ?>
+                                    <a href="../includes/generate_id_card_pdf.php?teacher_id=<?php echo $u['id']; ?>" target="_blank" class="btn-action" title="Carteirinha"><i class="fas fa-id-badge" style="color: #3498db;"></i></a>
+                                <?php endif; ?>
                                 <a href="user_form.php?id=<?php echo $u['id']; ?>" class="btn-action btn-edit" title="Editar"><i class="fas fa-edit"></i></a>
                                 <a href="#" class="btn-action btn-delete" title="Excluir" onclick="openDeleteModal(<?php echo $u['id']; ?>, '<?php echo htmlspecialchars(addslashes($u['firstName'])); ?>')"><i class="fas fa-trash"></i></a>
                             </div>
