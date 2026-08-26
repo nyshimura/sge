@@ -449,12 +449,31 @@ function initCanvas() {
             el.style.display = 'none';
         } else {
             el.style.display = 'flex';
-            el.style.left = (config[key].x * scale) + 'px';
-            el.style.top = (config[key].y * scale) + 'px';
+            let cX = config[key].x !== undefined ? config[key].x : 10;
+            let cY = config[key].y !== undefined ? config[key].y : 10;
+            
+            let pLeft = cX * scale;
+            let pTop = cY * scale;
+            
+            // Forçar os elementos a ficarem visíveis dentro da tela (não sair pela direita/baixo)
+            let maxW = canvas.classList.contains('canvas-P') ? 270 : 428;
+            let maxH = canvas.classList.contains('canvas-P') ? 428 : 270;
+            
+            // Se estiver fora da tela na horizontal, centraliza perfeitamente
+            if (pLeft > maxW - 20 || pLeft < 0) {
+                let elW = (key === 'photo') ? ((config[key].w || 20) * scale) : 100;
+                pLeft = (maxW / 2) - (elW / 2);
+            }
+            if (pTop > maxH - 20) pTop = Math.max(10, maxH - 50);
+
+            el.style.left = pLeft + 'px';
+            el.style.top = pTop + 'px';
             
             if (key === 'photo') {
-                el.style.width = (config[key].w * scale) + 'px';
-                el.style.height = (config[key].h * scale) + 'px';
+                let cW = config[key].w || 20;
+                let cH = config[key].h || 25;
+                el.style.width = (cW * scale) + 'px';
+                el.style.height = (cH * scale) + 'px';
                 if (config[key].shape === 'circle') {
                     el.style.borderRadius = '50%';
                 } else {
@@ -640,8 +659,13 @@ function updateConfigFromDOM() {
         } else {
             if (!config[key]) config[key] = {};
             // Convert px to mm
-            config[key].x = Math.round(parseInt(el.style.left) / scale);
-            config[key].y = Math.round(parseInt(el.style.top) / scale);
+            config[key].x = Math.round(parseInt(el.style.left) / scale) || 0;
+            config[key].y = Math.round(parseInt(el.style.top) / scale) || 0;
+            if (key === 'photo') {
+                config[key].w = config[key].w || 20;
+                config[key].h = config[key].h || 25;
+                config[key].shape = config[key].shape || 'rect';
+            }
         }
     }
     templateInput.value = JSON.stringify(config);
@@ -654,7 +678,9 @@ propVisible.addEventListener('change', function() {
         // Create default if missing
         if (!config[activeElement]) {
             if (activeElement === 'photo') {
-                config[activeElement] = {x:10, y:10, w:20, h:25, shape:'rect'};
+                let maxW = canvas.classList.contains('canvas-P') ? 270 : 428;
+                let cX = Math.round(((maxW / 2) - 50) / scale); // Center horizontally (100px / 2 = 50)
+                config[activeElement] = {x: cX, y:10, w:20, h:25, shape:'rect'};
             } else {
                 config[activeElement] = {x:10, y:10, size:10, color:'#000000'};
             }
