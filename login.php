@@ -106,6 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $_SESSION['user_id'] = $user['id'];
                     $_SESSION['user_name'] = $user['firstName'] . ' ' . $user['lastName'];
                     $_SESSION['user_role'] = trim($user['role']); 
+                    $_SESSION['real_role'] = trim($user['role']); // Guarda o papel original
                     $_SESSION['user_pic']  = $user['profilePicture'];
                     redirectUser($user['role']);
                 } else {
