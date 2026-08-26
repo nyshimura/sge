@@ -226,6 +226,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     margin-bottom: 5px;
     font-weight: normal;
 }
+@media (max-width: 768px) {
+    .grid-2-col {
+        grid-template-columns: 1fr;
+    }
+    .editor-container {
+        flex-direction: column;
+    }
+    .properties-panel {
+        width: 100%;
+        box-sizing: border-box;
+    }
+    .canvas-container-outer {
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: auto;
+        padding-bottom: 10px;
+    }
+}
 </style>
 
 <div class="content-wrapper">
@@ -289,7 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <p style="color:#666; font-size: 0.9rem; margin-top:5px;">Arraste os elementos no quadro abaixo para posicioná-los. Clique em um elemento para editar tamanho e cor.</p>
         
         <div class="editor-container">
-            <div>
+            <div class="canvas-container-outer">
                 <div class="canvas-wrapper canvas-<?php echo $template['orientation']; ?>" id="idCanvas" style="<?php if(!empty($template['background_image'])) echo 'background-image: url('.$template['background_image'].');'; ?>">
                     <div id="el_name" class="canvas-element" data-id="name">Nome do Aluno</div>
                     <div id="el_course" class="canvas-element" data-id="course">Nome do Curso</div>
